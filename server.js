@@ -13,7 +13,7 @@ const TAVILY_KEY = process.env.TAVILY_API_KEY?.trim();
 const BENCHMARKS = [
   { name: 'たっくーTVれいでぃお', query: 'たっくーTVれいでぃお' },
   { name: 'コヤッキースタジオ', query: 'コヤッキースタジオ' },
-  { name: 'ナオキマンショー', query: 'ナオキマンショー' },
+  { name: 'ナオキマンショー', query: '@naokimanshow-naokiman' },
   { name: 'とみビデオ', query: 'とみビデオ 都市伝説' },
   { name: '雨穴', query: '雨穴' },
   { name: '都市ボーイズ', query: '都市ボーイズ' },
@@ -134,7 +134,7 @@ async function getChannelBenchmark(query, sinceDays) {
         views: Number(v.statistics?.viewCount || 0),
         likes: Number(v.statistics?.likeCount || 0),
         comments: Number(v.statistics?.commentCount || 0),
-        isShort: dur > 0 && dur <= 60,
+        isShort: dur > 0 && dur <= SHORT_MAX,
         url: `https://www.youtube.com/watch?v=${v.id}`,
       });
     }
@@ -142,7 +142,9 @@ async function getChannelBenchmark(query, sinceDays) {
   videos.sort((a, b) => b.views - a.views);
 
   const totalViews = videos.reduce((a, v) => a + v.views, 0);
-  const shorts = videos.filter((v) => v.isShort).length;
+  const shortVids = videos.filter((v) => v.isShort);
+  const longVids = videos.filter((v) => !v.isShort);
+  const avg = (arr) => arr.length ? Math.round(arr.reduce((a, v) => a + v.views, 0) / arr.length) : 0;
   return {
     name: c.snippet.title,
     thumb: c.snippet.thumbnails?.default?.url || '',
@@ -150,7 +152,13 @@ async function getChannelBenchmark(query, sinceDays) {
     totalVideos: Number(c.statistics?.videoCount || 0),
     recentCount: videos.length,
     recentAvgViews: videos.length ? Math.round(totalViews / videos.length) : 0,
-    shortRatio: videos.length ? Math.round(shorts / videos.length * 100) : 0,
+    avgViewsLong: avg(longVids),
+    avgViewsShort: avg(shortVids),
+    longCount: longVids.length,
+    shortCount: shortVids.length,
+    shortRatio: videos.length ? Math.round(shortVids.length / videos.length * 100) : 0,
+    topLong: longVids.slice(0, 4),
+    topShort: shortVids.slice(0, 4),
     top: videos.slice(0, 5),
   };
 }
@@ -161,6 +169,9 @@ function parseDuration(iso) {
   if (!m) return 0;
   return (+(m[1] || 0)) * 3600 + (+(m[2] || 0)) * 60 + (+(m[3] || 0));
 }
+
+// YouTubeショートは現在最大3分（180秒）。この尺以下をショート扱いする
+const SHORT_MAX = 180;
 
 async function getAnalytics(channelInput, maxVideos = 50) {
   const channelId = await resolveChannel(channelInput);
@@ -213,7 +224,7 @@ async function getAnalytics(channelInput, maxVideos = 50) {
         likes: Number(v.statistics?.likeCount || 0),
         comments: Number(v.statistics?.commentCount || 0),
         duration: dur,
-        isShort: dur > 0 && dur <= 60,
+        isShort: dur > 0 && dur <= SHORT_MAX,
         url: `https://www.youtube.com/watch?v=${v.id}`,
       });
     }

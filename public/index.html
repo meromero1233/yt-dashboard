@@ -115,6 +115,12 @@
   .bmc .vids .vv{font-size:11px;font-weight:800;color:var(--gold)}
   .rankbadge{font-size:10px;background:var(--gold);color:#04121a;padding:2px 8px;border-radius:20px;font-weight:800;margin-left:auto}
   @media(max-width:1000px){.bmgrid{grid-template-columns:1fr}}
+  .fcin{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+  .fcin label{font-size:12px;color:var(--muted)}
+  .fcin input{width:130px;text-align:right}
+  .fcsum{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;font-size:14px;line-height:1.7}
+  .fcsum b{color:var(--cyan);font-size:16px}
+  .fcsum .strong{color:var(--green)} .fcsum .cons{color:var(--muted)}
   @media(max-width:1000px){.kpis{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}.two,.cmp{grid-template-columns:1fr}}
 </style>
 </head>
@@ -144,6 +150,7 @@
     <button data-tab="advice">🧠 AI高島</button>
     <button data-tab="compare">⚔️ 競合比較</button>
     <button data-tab="benchmark">🎯 ベンチマーク</button>
+    <button data-tab="forecast">🔮 成長予測</button>
   </div>
 
   <div id="errBox"></div>
@@ -237,6 +244,27 @@
       <div class="hint">上のデータ＋Web/Xの情報から、なぜ伸びているか・りくまこがどう取り入れるかを高島が考察します。</div>
       <button class="btn pink" id="bmAiBtn">戦略を分析してもらう</button>
       <div class="ai-out" id="bmAiOut" style="margin-top:16px"></div>
+    </div>
+  </div>
+
+  <!-- 成長予測 -->
+  <div class="view" id="view-forecast">
+    <div class="grid">
+      <div class="card">
+        <div class="panel-title">🔮 未来の登録者予測（24ヶ月）</div>
+        <canvas class="chart" id="fcChart"></canvas>
+        <div id="fcSummary" style="margin-top:14px"></div>
+      </div>
+      <div class="card">
+        <div class="panel-title">⚙️ 予測の前提（数字は変更できます）</div>
+        <div class="fcin"><label>現在の登録者数</label><input id="fcSubs" type="number"/></div>
+        <div class="fcin"><label>月間の投稿本数</label><input id="fcPosts" type="number"/></div>
+        <div class="fcin"><label>1本あたり平均再生数</label><input id="fcViews" type="number"/></div>
+        <div class="fcin"><label>視聴→登録の転換率 (%)</label><input id="fcConv" type="number" step="0.1"/></div>
+        <div class="fcin"><label>目標登録者数</label><input id="fcGoal" type="number"/></div>
+        <button class="btn" id="fcRun" style="width:100%;margin-top:10px">この前提で予測する</button>
+        <div class="hint" style="margin-top:12px">※ これは前提に基づく仮の試算です。実際の伸びは内容の質・アルゴリズム・バズで大きく変動します。「今のペースを続けるとどうなるか」の目安としてご覧ください。</div>
+      </div>
     </div>
   </div>
 
@@ -425,11 +453,13 @@ function renderBenchmark(){
         <div class="st">登録 ${fmt(c.subscribers)} ・ 総動画 ${fmt(c.totalVideos)}</div></div>
         ${i===0?'<span class="rankbadge">直近が最も好調</span>':''}</div>
       <div class="stats">
-        <div>直近${winLabel}の平均再生<b>${fmt(c.recentAvgViews)}</b></div>
-        <div>直近投稿数<b>${c.recentCount}本</b></div>
+        <div>ロング平均<b>${c.longCount?fmt(c.avgViewsLong):'—'}</b><span style="font-size:10px">${c.longCount}本</span></div>
+        <div>ショート平均<b style="color:var(--pink)">${c.shortCount?fmt(c.avgViewsShort):'—'}</b><span style="font-size:10px">${c.shortCount}本</span></div>
         <div>ショート比率<b>${c.shortRatio}%</b></div>
       </div>
-      <div class="vids">${c.top.map(v=>`<a href="${v.url}" target="_blank"><img src="${v.thumb}"/><div class="vv">${fmt(v.views)}回</div><div class="vt">${v.title}</div></a>`).join('')||'<div class="st">直近の投稿なし</div>'}</div>
+      ${c.topLong.length?`<div class="st" style="margin:4px 0 4px">▶ ロング上位</div><div class="vids">${c.topLong.map(v=>`<a href="${v.url}" target="_blank"><img src="${v.thumb}"/><div class="vv">${fmt(v.views)}回</div><div class="vt">${v.title}</div></a>`).join('')}</div>`:''}
+      ${c.topShort.length?`<div class="st" style="margin:8px 0 4px">📱 ショート上位</div><div class="vids">${c.topShort.map(v=>`<a href="${v.url}" target="_blank"><img src="${v.thumb}"/><div class="vv" style="color:var(--pink)">${fmt(v.views)}回</div><div class="vt">${v.title}</div></a>`).join('')}</div>`:''}
+      ${!c.recentCount?'<div class="st">直近の投稿なし</div>':''}
     </div>`).join('')+'</div>';
 
   // 共通点の自動集計
@@ -463,12 +493,61 @@ document.getElementById('bmWin').addEventListener('click',e=>{const b=e.target.c
 document.getElementById('bmLoadBtn').onclick=loadBenchmark;
 document.getElementById('bmAiBtn').onclick=benchmarkAI;
 
+// ── 成長予測 ──────────────────────────────────────────────
+function cadenceFromData(){
+  if(!RAW||RAW.videos.length<2)return null;
+  const ds=RAW.videos.map(v=>new Date(v.publishedAt).getTime()).sort((a,b)=>b-a);
+  const spanDays=(ds[0]-ds[ds.length-1])/86400000||30;
+  return RAW.videos.length/(spanDays/30);
+}
+function prefillForecast(){
+  const c=RAW?RAW.channel:{subscribers:0};
+  const recent=RAW?filtered():[];
+  const avgV=recent.length?Math.round(recent.reduce((a,v)=>a+v.views,0)/recent.length):3000;
+  const cad=cadenceFromData();
+  document.getElementById('fcSubs').value=c.subscribers||0;
+  document.getElementById('fcPosts').value=cad?Math.max(1,Math.round(cad)):12;
+  document.getElementById('fcViews').value=avgV||3000;
+  document.getElementById('fcConv').value=1.0;
+  document.getElementById('fcGoal').value=(RAW?RAW.goal:1000000);
+}
+function runForecast(){
+  const S0=+document.getElementById('fcSubs').value||0;
+  const posts=+document.getElementById('fcPosts').value||0;
+  const views=+document.getElementById('fcViews').value||0;
+  const conv=(+document.getElementById('fcConv').value||0)/100;
+  const goal=+document.getElementById('fcGoal').value||1000000;
+  const M=24;
+  const scen={ '保守':{m:0.015,c:0.7,col:'#7d8aa3'}, '標準':{m:0.04,c:1.0,col:'#22e0d6'}, '強気':{m:0.08,c:1.4,col:'#3ddc97'} };
+  const series={}, reach={};
+  for(const [k,s] of Object.entries(scen)){
+    let S=S0,V=views; const arr=[S];
+    for(let t=1;t<=M;t++){ const gain=posts*V*conv*s.c; S+=gain; V*=(1+s.m); arr.push(Math.round(S)); }
+    series[k]=arr;
+    const hit=arr.findIndex(x=>x>=goal); reach[k]=hit<0?null:hit;
+  }
+  const labels=Array.from({length:M+1},(_,i)=>i+'ヶ月');
+  mkChart('fcChart',{type:'line',data:{labels,datasets:Object.entries(scen).map(([k,s])=>({label:k,data:series[k],borderColor:s.col,backgroundColor:'transparent',tension:.3,pointRadius:0,borderWidth:k==='標準'?3:2,borderDash:k==='標準'?[]:[5,4]}))},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#eaf0fb',font:{size:11}}},tooltip:{callbacks:{label:i=>i.dataset.label+': '+fmt(i.raw)+'人'}}},scales:{x:{grid:{color:'#141c2a'},ticks:{color:'#7d8aa3',maxTicksLimit:13,font:{size:10}}},y:{grid:{color:'#141c2a'},ticks:{color:'#7d8aa3',callback:v=>fmt(v),font:{size:10}}}}}});
+  const std=series['標準'], m12=std[12], m24=std[24];
+  const rStd=reach['標準'], rStr=reach['強気'], rCon=reach['保守'];
+  const my=v=>v===null?'24ヶ月では未到達':(v<12?v+'ヶ月':(v/12).toFixed(1)+'年');
+  document.getElementById('fcSummary').innerHTML=`<div class="fcsum">
+    今のペース（月${posts}本・平均${fmt(views)}再生・転換率${(conv*100).toFixed(1)}%）を続けると…<br><br>
+    📈 <b>12ヶ月後：約${fmt(m12)}人</b> ／ 24ヶ月後：約${fmt(m24)}人（標準シナリオ）<br><br>
+    🎯 目標 ${fmt(goal)}人 到達まで：<br>
+    ・<span class="strong">強気</span> 約${my(rStr)}　・標準 <b style="font-size:14px">約${my(rStd)}</b>　・<span class="cons">保守 約${my(rCon)}</span><br><br>
+    <span style="color:var(--muted);font-size:12px">※ 再生数が伸びるほど登録の伸びは加速します。投稿本数か平均再生数を上げると、曲線が大きく上振れします。数字を変えて試してみてください。</span>
+  </div>`;
+}
+document.getElementById('fcRun').onclick=runForecast;
+
 // タブ切り替え
 document.getElementById('tabs').addEventListener('click',e=>{
   const b=e.target.closest('button'); if(!b)return;
   document.querySelectorAll('#tabs button').forEach(x=>x.classList.remove('on')); b.classList.add('on');
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
   document.getElementById('view-'+b.dataset.tab).classList.add('on');
+  if(b.dataset.tab==='forecast'){ prefillForecast(); runForecast(); }
 });
 document.getElementById('loadBtn').onclick=load;
 document.getElementById('channelInput').addEventListener('keydown',e=>{if(e.key==='Enter')load();});
