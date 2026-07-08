@@ -1,0 +1,10 @@
+{
+  "name": "yt-dashboard",
+  "version": "1.0.0",
+  "description": "りくまこRadio YouTube分析ダッシュボード",
+  "type": "module",
+  "main": "server.js",
+  "engines": { "node": ">=18.0.0" },
+  "scripts": { "start": "node server.js" },
+  "dependencies": { "dotenv": "^16.4.5" }
+}

@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>REALTIME ANALYTICS — りくまこRadio</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#080a0f; --panel:#0e131c; --panel2:#121927; --line:#1e2838;
+    --text:#eaf0fb; --muted:#7d8aa3; --cyan:#22e0d6; --pink:#ff3d81;
+    --gold:#f5c451; --green:#3ddc97; --radius:18px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:'Segoe UI','Hiragino Sans','Noto Sans JP',sans-serif;
+    background:radial-gradient(1200px 600px at 80% -10%,#132033 0%,var(--bg) 55%);
+    color:var(--text);min-height:100vh;padding:22px;
+  }
+  .wrap{max-width:1360px;margin:0 auto}
+  /* ヘッダー */
+  header{display:flex;align-items:center;gap:18px;margin-bottom:22px;flex-wrap:wrap}
+  .avatar{width:56px;height:56px;border-radius:50%;object-fit:cover;border:2px solid var(--line);background:var(--panel2)}
+  .brand h1{font-size:20px;font-weight:800;letter-spacing:.5px}
+  .brand .sub{font-size:11px;color:var(--muted);letter-spacing:3px;font-weight:600}
+  .spacer{flex:1}
+  .live{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--pink);font-weight:700}
+  .live .dot{width:8px;height:8px;border-radius:50%;background:var(--pink);box-shadow:0 0 10px var(--pink);animation:pulse 1.6s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+  .controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:20px}
+  input,select{background:var(--panel2);border:1px solid var(--line);color:var(--text);
+    padding:10px 14px;border-radius:10px;font-size:13px;outline:none}
+  input{width:320px}
+  .segs{display:flex;background:var(--panel2);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .segs button{background:none;border:none;color:var(--muted);padding:9px 14px;font-size:12px;cursor:pointer;font-weight:600}
+  .segs button.on{background:linear-gradient(135deg,var(--cyan),#1aa9d6);color:#04121a}
+  .btn{background:linear-gradient(135deg,var(--cyan),#17b8b0);color:#04121a;border:none;
+    padding:10px 18px;border-radius:10px;font-weight:800;cursor:pointer;font-size:13px}
+  /* KPI */
+  .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:16px}
+  .card{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);
+    border-radius:var(--radius);padding:18px 20px;position:relative;overflow:hidden}
+  .card::before{content:'';position:absolute;inset:0 0 auto 0;height:2px;
+    background:linear-gradient(90deg,transparent,var(--cyan),transparent);opacity:.5}
+  .kpi .label{font-size:11px;color:var(--muted);font-weight:700;letter-spacing:1px;display:flex;align-items:center;gap:6px}
+  .kpi .val{font-size:30px;font-weight:800;margin-top:8px;font-variant-numeric:tabular-nums;letter-spacing:-.5px}
+  .kpi .val.pink{color:var(--pink)} .kpi .val.cyan{color:var(--cyan)} .kpi .val.gold{color:var(--gold)}
+  .grid{display:grid;grid-template-columns:1fr 340px;gap:14px;margin-bottom:14px}
+  .panel-title{font-size:12px;color:var(--muted);font-weight:700;letter-spacing:1px;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+  .badge{font-size:10px;background:var(--pink);color:#fff;padding:2px 8px;border-radius:20px;font-weight:800}
+  #perfChart{width:100%!important;height:320px!important}
+  /* 目標 */
+  .goal .big{font-size:40px;font-weight:800;color:var(--cyan);letter-spacing:-1px}
+  .goal .big small{font-size:14px;color:var(--muted);font-weight:600}
+  .bar{height:10px;background:var(--panel);border-radius:20px;margin:14px 0 8px;overflow:hidden;border:1px solid var(--line)}
+  .bar>span{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green));border-radius:20px;transition:width 1s}
+  .goal .row{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
+  .pct{color:var(--green);font-weight:800}
+  /* ランキング */
+  .rank{display:flex;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+  .rank:last-child{border-bottom:none}
+  .rank .n{font-size:15px;font-weight:800;color:var(--gold);width:22px;text-align:center;flex:none}
+  .rank img{width:64px;height:36px;object-fit:cover;border-radius:6px;flex:none;background:var(--panel)}
+  .rank .t{font-size:12px;line-height:1.35;max-height:34px;overflow:hidden}
+  .rank .v{margin-left:auto;font-size:13px;font-weight:800;color:var(--cyan);flex:none;white-space:nowrap}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .metric{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}
+  .metric:last-child{border:none}
+  .metric .m{font-size:13px;color:var(--muted)} .metric .d{font-size:18px;font-weight:800}
+  .foot{display:flex;justify-content:space-between;color:var(--muted);font-size:11px;margin-top:16px}
+  .latest{display:flex;gap:14px;align-items:center}
+  .latest img{width:120px;height:68px;object-fit:cover;border-radius:10px;flex:none}
+  .latest .lv{font-size:26px;font-weight:800;color:var(--gold)}
+  .latest .lt{font-size:12px;color:var(--muted);line-height:1.4;max-height:50px;overflow:hidden}
+  .loading{text-align:center;padding:60px;color:var(--muted)}
+  .err{background:#2a0e15;border:1px solid var(--pink);color:#ff9bbb;padding:14px 18px;border-radius:12px;margin-bottom:14px;font-size:13px}
+  @media(max-width:1000px){.kpis{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}.two{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <img id="avatar" class="avatar" alt="" />
+    <div class="brand">
+      <div class="sub">REALTIME ANALYTICS</div>
+      <h1 id="chName">読み込み中…</h1>
+    </div>
+    <div class="spacer"></div>
+    <div class="live"><span class="dot"></span> LIVE</div>
+  </header>
+
+  <div class="controls">
+    <input id="channelInput" placeholder="チャンネルID (UC...) または @ハンドル" />
+    <button class="btn" id="loadBtn">分析</button>
+    <div class="segs" id="typeSeg">
+      <button data-type="all" class="on">全て</button>
+      <button data-type="long">ロング</button>
+      <button data-type="short">ショート</button>
+    </div>
+  </div>
+
+  <div id="errBox"></div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="panel-title">📈 動画パフォーマンス（直近） <span class="badge" id="perfCount">0本</span></div>
+      <canvas id="perfChart"></canvas>
+    </div>
+    <div class="card goal" id="goalCard">
+      <div class="panel-title">🎯 目標達成度</div>
+      <div class="big" id="goalRemain">—</div>
+      <div class="bar"><span id="goalBar" style="width:0%"></span></div>
+      <div class="row"><span id="goalNow"></span><span class="pct" id="goalPct"></span></div>
+      <div style="margin-top:22px" class="panel-title">🆕 最新動画</div>
+      <div class="latest" id="latest"></div>
+    </div>
+  </div>
+
+  <div class="two">
+    <div class="card">
+      <div class="panel-title">🏆 視聴数ランキング</div>
+      <div id="ranking"></div>
+    </div>
+    <div class="card">
+      <div class="panel-title">📊 成長メトリクス</div>
+      <div id="metrics"></div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <span id="updated"></span>
+    <span>AUTO REFRESH · 10min</span>
+  </div>
+</div>
+
+<script>
+const fmt = n => {
+  n = Number(n) || 0;
+  if (n >= 1e8) return (n/1e8).toFixed(2)+'億';
+  if (n >= 1e4) return (n/1e4).toFixed(1)+'万';
+  return n.toLocaleString();
+};
+let RAW = null, type = 'all', chart = null;
+
+function filtered() {
+  if (!RAW) return [];
+  if (type === 'long') return RAW.videos.filter(v => !v.isShort);
+  if (type === 'short') return RAW.videos.filter(v => v.isShort);
+  return RAW.videos;
+}
+
+async function load() {
+  const ch = document.getElementById('channelInput').value.trim();
+  document.getElementById('errBox').innerHTML = '';
+  document.getElementById('chName').textContent = '読み込み中…';
+  try {
+    const r = await fetch('/api/analytics?channel=' + encodeURIComponent(ch) + '&max=50');
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    RAW = d;
+    render();
+  } catch (e) {
+    document.getElementById('errBox').innerHTML = '<div class="err">⚠️ ' + e.message + '</div>';
+    document.getElementById('chName').textContent = 'エラー';
+  }
+}
+
+function render() {
+  const c = RAW.channel;
+  document.getElementById('chName').textContent = c.title;
+  if (c.thumb) document.getElementById('avatar').src = c.thumb;
+
+  const vids = filtered();
+  const sumLikes = vids.reduce((a,v)=>a+v.likes,0);
+  const sumComments = vids.reduce((a,v)=>a+v.comments,0);
+
+  // KPI
+  document.getElementById('kpis').innerHTML = [
+    ['▶ 総視聴回数', fmt(c.totalViews), 'cyan'],
+    ['👥 登録者数', c.hiddenSubs ? '非公開' : fmt(c.subscribers), 'pink'],
+    ['👍 高評価(直近)', fmt(sumLikes), ''],
+    ['💬 コメント(直近)', fmt(sumComments), ''],
+    ['🎬 投稿本数', fmt(c.totalVideos), 'gold'],
+  ].map(([l,v,cl]) => `<div class="card kpi"><div class="label">${l}</div><div class="val ${cl}">${v}</div></div>`).join('');
+
+  // 目標
+  const goal = RAW.goal, now = c.subscribers, pct = Math.min(now/goal*100, 100);
+  document.getElementById('goalRemain').innerHTML = 'あと <b>' + fmt(Math.max(goal-now,0)) + '</b> <small>人</small>';
+  document.getElementById('goalBar').style.width = pct + '%';
+  document.getElementById('goalNow').textContent = '現在 ' + fmt(now) + ' / 目標 ' + fmt(goal);
+  document.getElementById('goalPct').textContent = pct.toFixed(1) + '%';
+
+  // 最新動画
+  const latest = RAW.videos[0];
+  document.getElementById('latest').innerHTML = latest ? `
+    <img src="${latest.thumb}" alt="" />
+    <div><div class="lv">${fmt(latest.views)}<small style="font-size:13px;color:var(--muted)"> 回</small></div>
+    <div class="lt">${latest.title}</div></div>` : '<div class="lt">動画がまだありません</div>';
+
+  // ランキング
+  const rank = [...vids].sort((a,b)=>b.views-a.views).slice(0,10);
+  document.getElementById('ranking').innerHTML = rank.length ? rank.map((v,i)=>`
+    <div class="rank"><div class="n">${i+1}</div>
+    <img src="${v.thumb}" alt=""/>
+    <div class="t">${v.title}</div>
+    <div class="v">${fmt(v.views)}</div></div>`).join('') : '<div class="lt" style="color:var(--muted)">データなし</div>';
+
+  // メトリクス
+  const avg = vids.length ? Math.round(vids.reduce((a,v)=>a+v.views,0)/vids.length) : 0;
+  const engRate = vids.reduce((a,v)=>a+v.views,0) > 0
+    ? ((sumLikes+sumComments)/vids.reduce((a,v)=>a+v.views,0)*100) : 0;
+  const shorts = RAW.videos.filter(v=>v.isShort).length;
+  const longs = RAW.videos.length - shorts;
+  document.getElementById('metrics').innerHTML = [
+    ['平均再生数（直近）', fmt(avg)],
+    ['エンゲージメント率', engRate.toFixed(2)+'%'],
+    ['ショート / ロング比', shorts+' / '+longs],
+    ['分析対象本数', vids.length+' 本'],
+  ].map(([m,d])=>`<div class="metric"><span class="m">${m}</span><span class="d">${d}</span></div>`).join('');
+
+  document.getElementById('perfCount').textContent = vids.length + '本';
+  document.getElementById('updated').textContent = '最終更新 ' + new Date(RAW.fetchedAt).toLocaleString('ja-JP');
+  drawChart(vids);
+}
+
+function drawChart(vids) {
+  const data = [...vids].reverse(); // 古い→新しい
+  const labels = data.map(v => new Date(v.publishedAt).toLocaleDateString('ja-JP',{month:'numeric',day:'numeric'}));
+  const points = data.map(v => v.views);
+  if (chart) chart.destroy();
+  const ctx = document.getElementById('perfChart');
+  const grad = ctx.getContext('2d').createLinearGradient(0,0,0,320);
+  grad.addColorStop(0,'rgba(255,61,129,.35)'); grad.addColorStop(1,'rgba(255,61,129,0)');
+  chart = new Chart(ctx, {
+    type:'line',
+    data:{ labels, datasets:[{ data:points, borderColor:'#ff3d81', backgroundColor:grad,
+      fill:true, tension:.35, pointRadius:3, pointBackgroundColor:'#22e0d6', borderWidth:2 }] },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, tooltip:{
+        callbacks:{ title:(i)=>data[i[0].dataIndex].title, label:(i)=>fmt(i.raw)+' 回' } } },
+      scales:{
+        x:{ grid:{color:'#141c2a'}, ticks:{color:'#7d8aa3',maxTicksLimit:12,font:{size:10}} },
+        y:{ grid:{color:'#141c2a'}, ticks:{color:'#7d8aa3',callback:v=>fmt(v),font:{size:10}} } } }
+  });
+}
+
+document.getElementById('loadBtn').onclick = load;
+document.getElementById('channelInput').addEventListener('keydown', e => { if(e.key==='Enter') load(); });
+document.getElementById('typeSeg').addEventListener('click', e => {
+  const b = e.target.closest('button'); if(!b) return;
+  document.querySelectorAll('#typeSeg button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); type = b.dataset.type; if(RAW) render();
+});
+setInterval(load, 10*60*1000); // 10分ごと自動更新
+load();
+</script>
+</body>
+</html>
