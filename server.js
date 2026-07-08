@@ -6,9 +6,33 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const KEY = process.env.YOUTUBE_API_KEY?.trim();
+const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY?.trim();
 const DEFAULT_CHANNEL = process.env.CHANNEL_ID?.trim() || 'UCM1vJX0aYxbt69U0XrwsVag';
 const DEFAULT_GOAL = Number(process.env.SUBSCRIBER_GOAL || 1000000);
 const PORT = Number(process.env.PORT || 5178);
+
+// ── Claude（高島）呼び出し ────────────────────────────────────────────────────
+async function askClaude(system, user, maxTokens = 1500) {
+  const r = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': ANTHROPIC_KEY,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: maxTokens,
+      system,
+      messages: [{ role: 'user', content: user }],
+    }),
+  });
+  if (!r.ok) throw new Error(`Anthropic ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  const d = await r.json();
+  return d.content?.[0]?.text ?? '';
+}
+
+const TAKASHIMA = `あなたは「高島」という敏腕YouTubeマネージャーです。冷静沈着、データドリブン、的確で簡潔。厳しくも愛のある口調。語尾は自然な敬語。分析は具体的に、必ず「次にやる行動」まで落とし込む。おだてず、でも折れさせない。`;
 
 // ── YouTube API ヘルパー ──────────────────────────────────────────────────────
 async function yt(endpoint, params) {
@@ -120,6 +144,15 @@ async function getAnalytics(channelInput, maxVideos = 50) {
 // ── HTTP サーバー ─────────────────────────────────────────────────────────────
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css' };
 
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let b = '';
+    req.on('data', (c) => { b += c; if (b.length > 2e6) req.destroy(); });
+    req.on('end', () => resolve(b));
+    req.on('error', reject);
+  });
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
@@ -128,6 +161,50 @@ const server = http.createServer(async (req, res) => {
       const data = await getAnalytics(url.searchParams.get('channel'), Number(url.searchParams.get('max') || 50));
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify(data));
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  // AIアドバイス / バリューアップ（POST）
+  if (url.pathname === '/api/ai' && req.method === 'POST') {
+    try {
+      const body = await readBody(req);
+      const { kind, summary } = JSON.parse(body || '{}');
+      let system = TAKASHIMA, user, maxTokens = 1500;
+
+      if (kind === 'advice') {
+        user = `以下はYouTubeチャンネルの分析データです。高島として「成長診断」をしてください。
+
+${summary}
+
+次の形式で、簡潔かつ具体的に：
+■ 現状の評価（良い点・課題を各2つ、データを引用して）
+■ 一番の伸びしろ（1つに絞って、なぜそこかを説明）
+■ 今週の具体アクション（3つ、すぐ実行できる粒度で）
+■ 高島からの一言（短く、熱量のある一言）`;
+      } else if (kind === 'valueup') {
+        maxTokens = 2000;
+        user = `以下はYouTubeチャンネルの動画データ（再生数つき）です。高島として「バリューアッププラン」を作ってください。
+再生数が伸び悩んでいる動画を中心に、最大5本について、タイトルとサムネイルをどう変えれば伸びる可能性が上がるかを提案します。
+
+${summary}
+
+各動画について次の形式で：
+【元タイトル】（そのまま）
+【改善タイトル案】（クリックされやすく、具体的に。15〜28字目安）
+【サムネ改善のコンセプト】（何を大きく見せる/どんな表情・文字・色か、1〜2行）
+【期待できる伸び】（例：「CTR改善で再生数1.5〜2倍の可能性」など、根拠を一言添えて現実的に）
+最後に ■まとめ として、タイトル・サムネ全体に共通して意識すべきポイントを3つ。`;
+      } else {
+        throw new Error('unknown kind');
+      }
+
+      const text = await askClaude(system, user, maxTokens);
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ text }));
     } catch (e) {
       res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ error: e.message }));
