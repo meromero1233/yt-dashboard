@@ -7,6 +7,33 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const KEY = process.env.YOUTUBE_API_KEY?.trim();
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY?.trim();
+const TAVILY_KEY = process.env.TAVILY_API_KEY?.trim();
+
+// ベンチマーク対象（同ジャンル大手）。名前＋検索クエリで解決する
+const BENCHMARKS = [
+  { name: 'たっくーTVれいでぃお', query: 'たっくーTVれいでぃお' },
+  { name: 'コヤッキースタジオ', query: 'コヤッキースタジオ' },
+  { name: 'ナオキマンショー', query: 'ナオキマンショー' },
+  { name: 'とみビデオ', query: 'とみビデオ 都市伝説' },
+  { name: '雨穴', query: '雨穴' },
+  { name: '都市ボーイズ', query: '都市ボーイズ' },
+];
+
+// Tavily Web/X 検索
+async function webSearch(query, max = 5) {
+  if (!TAVILY_KEY) return { answer: '', results: '' };
+  const r = await fetch('https://api.tavily.com/search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ api_key: TAVILY_KEY, query, search_depth: 'basic', max_results: max, include_answer: true }),
+  });
+  if (!r.ok) return { answer: '', results: '' };
+  const d = await r.json();
+  return {
+    answer: d.answer || '',
+    results: (d.results || []).map((x) => `・${x.title}: ${(x.content || '').slice(0, 180)}`).join('\n'),
+  };
+}
 const DEFAULT_CHANNEL = process.env.CHANNEL_ID?.trim() || 'UCM1vJX0aYxbt69U0XrwsVag';
 const DEFAULT_GOAL = Number(process.env.SUBSCRIBER_GOAL || 1000000);
 const PORT = Number(process.env.PORT || 5178);
@@ -47,17 +74,85 @@ async function yt(endpoint, params) {
   return r.json();
 }
 
-// チャンネル指定（UC... / @handle / handle）を解決して channelId を返す
+// チャンネル指定（UC... / @handle / handle / 名前）を解決して channelId を返す（キャッシュ付き）
+const resolveCache = new Map();
 async function resolveChannel(input) {
   const q = (input || DEFAULT_CHANNEL).trim();
   if (/^UC[\w-]{20,}$/.test(q)) return q;
+  if (resolveCache.has(q)) return resolveCache.get(q);
   const handle = q.replace(/^@/, '');
-  const d = await yt('channels', { part: 'id', forHandle: handle });
-  if (d.items?.[0]) return d.items[0].id;
-  // フォールバック：検索
-  const s = await yt('search', { part: 'snippet', q, type: 'channel', maxResults: '1' });
-  if (s.items?.[0]) return s.items[0].snippet.channelId;
-  throw new Error('チャンネルが見つかりませんでした');
+  let id = null;
+  const d = await yt('channels', { part: 'id', forHandle: handle }).catch(() => null);
+  if (d?.items?.[0]) id = d.items[0].id;
+  if (!id) {
+    const s = await yt('search', { part: 'snippet', q, type: 'channel', maxResults: '1' });
+    if (s.items?.[0]) id = s.items[0].snippet.channelId;
+  }
+  if (!id) throw new Error('チャンネルが見つかりませんでした: ' + q);
+  resolveCache.set(q, id);
+  return id;
+}
+
+// ベンチマーク用：チャンネルの「直近◯日以内」の動画を分析
+async function getChannelBenchmark(query, sinceDays) {
+  const channelId = await resolveChannel(query);
+  const ch = await yt('channels', { part: 'snippet,statistics,contentDetails', id: channelId });
+  const c = ch.items?.[0];
+  if (!c) throw new Error('取得失敗: ' + query);
+  const uploads = c.contentDetails.relatedPlaylists.uploads;
+  const since = Date.now() - sinceDays * 86400000;
+
+  const ids = [];
+  let pageToken = '';
+  try {
+    for (let p = 0; p < 4; p++) { // 最大200件まで遡る
+      const pl = await yt('playlistItems', {
+        part: 'contentDetails', playlistId: uploads, maxResults: '50',
+        ...(pageToken ? { pageToken } : {}),
+      });
+      let oldestInPage = Infinity;
+      for (const it of pl.items || []) {
+        const t = new Date(it.contentDetails.videoPublishedAt || 0).getTime();
+        oldestInPage = Math.min(oldestInPage, t);
+        if (t >= since) ids.push(it.contentDetails.videoId);
+      }
+      if (!pl.nextPageToken || oldestInPage < since) break;
+      pageToken = pl.nextPageToken;
+    }
+  } catch { /* 動画なし等 */ }
+
+  const videos = [];
+  for (let i = 0; i < ids.length; i += 50) {
+    const batch = ids.slice(i, i + 50);
+    if (!batch.length) break;
+    const vd = await yt('videos', { part: 'snippet,statistics,contentDetails', id: batch.join(',') });
+    for (const v of vd.items || []) {
+      const dur = parseDuration(v.contentDetails?.duration);
+      videos.push({
+        id: v.id, title: v.snippet.title, publishedAt: v.snippet.publishedAt,
+        thumb: v.snippet.thumbnails?.medium?.url || '',
+        views: Number(v.statistics?.viewCount || 0),
+        likes: Number(v.statistics?.likeCount || 0),
+        comments: Number(v.statistics?.commentCount || 0),
+        isShort: dur > 0 && dur <= 60,
+        url: `https://www.youtube.com/watch?v=${v.id}`,
+      });
+    }
+  }
+  videos.sort((a, b) => b.views - a.views);
+
+  const totalViews = videos.reduce((a, v) => a + v.views, 0);
+  const shorts = videos.filter((v) => v.isShort).length;
+  return {
+    name: c.snippet.title,
+    thumb: c.snippet.thumbnails?.default?.url || '',
+    subscribers: Number(c.statistics?.subscriberCount || 0),
+    totalVideos: Number(c.statistics?.videoCount || 0),
+    recentCount: videos.length,
+    recentAvgViews: videos.length ? Math.round(totalViews / videos.length) : 0,
+    shortRatio: videos.length ? Math.round(shorts / videos.length * 100) : 0,
+    top: videos.slice(0, 5),
+  };
 }
 
 function parseDuration(iso) {
@@ -161,6 +256,67 @@ const server = http.createServer(async (req, res) => {
       const data = await getAnalytics(url.searchParams.get('channel'), Number(url.searchParams.get('max') || 50));
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify(data));
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  // ベンチマーク（同ジャンル大手の直近分析）
+  if (url.pathname === '/api/benchmark') {
+    try {
+      const days = Number(url.searchParams.get('days') || 90);
+      const channels = [];
+      for (const b of BENCHMARKS) {
+        try {
+          channels.push({ label: b.name, ...(await getChannelBenchmark(b.query, days)) });
+        } catch (e) {
+          console.warn('[benchmark]', b.name, e.message);
+        }
+      }
+      channels.sort((a, b) => b.recentAvgViews - a.recentAvgViews);
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ days, channels, fetchedAt: new Date().toISOString() }));
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  // ベンチマークAI分析（POST：伸びた要因＋りくまこへのアジャスト）
+  if (url.pathname === '/api/benchmark-ai' && req.method === 'POST') {
+    try {
+      const { summary, channelNames } = JSON.parse((await readBody(req)) || '{}');
+      // Web/Xから伸びた要因を集める
+      let web = '';
+      for (const q of [
+        `${(channelNames || []).slice(0, 3).join(' ')} YouTube 伸びている 理由 戦略`,
+        '都市伝説 雑学 YouTube チャンネル 2026 伸びている 共通点',
+        'YouTube 都市伝説 ショート バズ 構成 サムネ 傾向',
+      ]) {
+        const { answer, results } = await webSearch(q, 4);
+        if (answer || results) web += `▼「${q}」\n${answer}\n${results}\n\n`;
+      }
+
+      const user = `以下は、りくまこRadio（都市伝説・雑学・未解決事件ジャンルのYouTube）の同ジャンル大手チャンネルの直近データと、Web/Xで集めた情報です。
+
+【同ジャンル大手の直近データ】
+${summary}
+
+【Web/X情報（伸びた要因のヒント）】
+${web || '（Web情報は取得できませんでした。データと一般知見で分析してください）'}
+
+高島として、次を分析してください：
+■ 各チャンネルが伸びている要因（データとWeb情報から、チャンネルごとに1〜2行）
+■ 伸びているチャンネルの共通点（コンテンツの性質・構成・サムネ/タイトル・投稿頻度など、具体的に3〜5個）
+■ りくまこRadioへのアジャスト案（今すぐ真似できること3つ＋中期で仕込むこと2つ。りくまこは登録者ゼロからのスタートである前提で、現実的に）
+■ 高島の結論（この分析から言える"勝ち筋"を一言で）`;
+
+      const text = await askClaude(TAKASHIMA, user, 2200);
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ text, hadWeb: !!web }));
     } catch (e) {
       res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ error: e.message }));

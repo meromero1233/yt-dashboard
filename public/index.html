@@ -99,6 +99,22 @@
   .spin{display:inline-block;width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--cyan);border-radius:50%;animation:sp 1s linear infinite;vertical-align:middle}
   @keyframes sp{to{transform:rotate(360deg)}}
   .hint{font-size:12px;color:var(--muted);margin-bottom:12px}
+  .bmgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:14px}
+  .bmc{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:16px;padding:16px}
+  .bmc .head{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+  .bmc .head img{width:44px;height:44px;border-radius:50%;flex:none;border:1px solid var(--line)}
+  .bmc .nm{font-weight:800;font-size:15px}
+  .bmc .st{font-size:11px;color:var(--muted)}
+  .bmc .stats{display:flex;gap:14px;margin-bottom:12px;flex-wrap:wrap}
+  .bmc .stats div{font-size:11px;color:var(--muted)}
+  .bmc .stats b{display:block;font-size:16px;color:var(--cyan);font-weight:800}
+  .bmc .vids{display:flex;gap:8px;overflow-x:auto}
+  .bmc .vids a{flex:none;width:120px;text-decoration:none;color:var(--text)}
+  .bmc .vids img{width:120px;height:68px;object-fit:cover;border-radius:8px;background:var(--panel)}
+  .bmc .vids .vt{font-size:10px;line-height:1.3;margin-top:4px;height:26px;overflow:hidden;color:var(--muted)}
+  .bmc .vids .vv{font-size:11px;font-weight:800;color:var(--gold)}
+  .rankbadge{font-size:10px;background:var(--gold);color:#04121a;padding:2px 8px;border-radius:20px;font-weight:800;margin-left:auto}
+  @media(max-width:1000px){.bmgrid{grid-template-columns:1fr}}
   @media(max-width:1000px){.kpis{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}.two,.cmp{grid-template-columns:1fr}}
 </style>
 </head>
@@ -127,6 +143,7 @@
     <button data-tab="valueup">🚀 バリューアップ</button>
     <button data-tab="advice">🧠 AI高島</button>
     <button data-tab="compare">⚔️ 競合比較</button>
+    <button data-tab="benchmark">🎯 ベンチマーク</button>
   </div>
 
   <div id="errBox"></div>
@@ -192,6 +209,34 @@
         <button class="btn" id="compareBtn">比較する</button>
       </div>
       <div id="compareOut"></div>
+    </div>
+  </div>
+
+  <!-- ベンチマーク -->
+  <div class="view" id="view-benchmark">
+    <div class="card" style="margin-bottom:14px">
+      <div class="panel-title">🎯 同ジャンル大手ベンチマーク</div>
+      <div class="hint">都市伝説・雑学・未解決系の大手が、選んだ期間内にどんな動画で伸びているかを分析します。</div>
+      <div class="controls">
+        <div class="segs" id="bmWin">
+          <button data-days="30">1ヶ月</button>
+          <button data-days="90" class="on">3ヶ月</button>
+          <button data-days="180">半年</button>
+          <button data-days="365">1年</button>
+        </div>
+        <button class="btn" id="bmLoadBtn">取得・分析</button>
+      </div>
+    </div>
+    <div id="bmChannels"></div>
+    <div class="card" id="bmTraitsCard" style="display:none;margin-bottom:14px">
+      <div class="panel-title">🔍 伸びている大手の共通点（自動集計）</div>
+      <div id="bmTraits"></div>
+    </div>
+    <div class="card">
+      <div class="panel-title">🧠 高島の戦略分析 → りくまこRadioへのアジャスト</div>
+      <div class="hint">上のデータ＋Web/Xの情報から、なぜ伸びているか・りくまこがどう取り入れるかを高島が考察します。</div>
+      <button class="btn pink" id="bmAiBtn">戦略を分析してもらう</button>
+      <div class="ai-out" id="bmAiOut" style="margin-top:16px"></div>
     </div>
   </div>
 
@@ -359,6 +404,64 @@ async function doCompare(){
     }).join('');
   }catch(e){ out.innerHTML='<div class="err">⚠️ '+e.message+'</div>'; }
 }
+
+// ── ベンチマーク ──────────────────────────────────────────────
+let BM=null, bmDays=90;
+async function loadBenchmark(){
+  const out=document.getElementById('bmChannels');
+  out.innerHTML='<div class="card"><span class="spin"></span> 大手チャンネルを分析中…（30秒ほどかかります）</div>';
+  document.getElementById('bmTraitsCard').style.display='none';
+  try{
+    const r=await fetch('/api/benchmark?days='+bmDays);
+    const d=await r.json(); if(d.error)throw new Error(d.error);
+    BM=d; renderBenchmark();
+  }catch(e){ out.innerHTML='<div class="err">⚠️ '+e.message+'</div>'; }
+}
+function renderBenchmark(){
+  const winLabel={30:'1ヶ月',90:'3ヶ月',180:'半年',365:'1年'}[bmDays];
+  document.getElementById('bmChannels').innerHTML='<div class="bmgrid">'+BM.channels.map((c,i)=>`
+    <div class="bmc">
+      <div class="head"><img src="${c.thumb}"/><div><div class="nm">${c.name}</div>
+        <div class="st">登録 ${fmt(c.subscribers)} ・ 総動画 ${fmt(c.totalVideos)}</div></div>
+        ${i===0?'<span class="rankbadge">直近が最も好調</span>':''}</div>
+      <div class="stats">
+        <div>直近${winLabel}の平均再生<b>${fmt(c.recentAvgViews)}</b></div>
+        <div>直近投稿数<b>${c.recentCount}本</b></div>
+        <div>ショート比率<b>${c.shortRatio}%</b></div>
+      </div>
+      <div class="vids">${c.top.map(v=>`<a href="${v.url}" target="_blank"><img src="${v.thumb}"/><div class="vv">${fmt(v.views)}回</div><div class="vt">${v.title}</div></a>`).join('')||'<div class="st">直近の投稿なし</div>'}</div>
+    </div>`).join('')+'</div>';
+
+  // 共通点の自動集計
+  const all=BM.channels.flatMap(c=>c.top);
+  if(all.length){
+    const avgLen=Math.round(all.reduce((a,v)=>a+v.title.length,0)/all.length);
+    const shortTop=all.filter(v=>v.isShort).length;
+    const avgViews=Math.round(all.reduce((a,v)=>a+v.views,0)/all.length);
+    const topCadence=Math.round(BM.channels.reduce((a,c)=>a+c.recentCount,0)/BM.channels.length);
+    document.getElementById('bmTraitsCard').style.display='';
+    document.getElementById('bmTraits').innerHTML=`
+      <div class="insight">👑 大手のヒット動画の平均再生は <b>${fmt(avgViews)}回</b>。まずこの水準の"型"を研究対象に。</div>
+      <div class="insight">✍️ ヒット動画のタイトルは平均 <b>${avgLen}字</b>。この長さ・言い回しがクリックされやすい傾向。</div>
+      <div class="insight">🎬 ヒット動画${all.length}本中 <b>${shortTop}本がショート</b>。${shortTop>=all.length/2?'大手も集客はショート主導。':'ロングでじっくり見せる型が強い。'}</div>
+      <div class="insight">📆 各チャンネルの直近投稿数は平均 <b>${topCadence}本</b>。この投稿頻度が伸びの前提になっています。</div>`;
+  }
+}
+async function benchmarkAI(){
+  const out=document.getElementById('bmAiOut'); const btn=document.getElementById('bmAiBtn');
+  if(!BM){out.textContent='先に「取得・分析」でデータを読み込んでください。';return;}
+  btn.disabled=true; const old=btn.textContent; btn.innerHTML='<span class="spin"></span> 高島が分析中…（Web検索込みで20秒ほど）';
+  const summary=BM.channels.map(c=>`■${c.name}（登録${fmt(c.subscribers)}）直近平均${fmt(c.recentAvgViews)}回・${c.recentCount}本・short${c.shortRatio}%\n  代表作: `+c.top.slice(0,3).map(v=>`「${v.title}」${fmt(v.views)}回`).join(' / ')).join('\n');
+  try{
+    const r=await fetch('/api/benchmark-ai',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({summary,channelNames:BM.channels.map(c=>c.name)})});
+    const d=await r.json(); if(d.error)throw new Error(d.error);
+    out.innerHTML=mdLite(d.text);
+  }catch(e){ out.innerHTML='<div class="err">⚠️ '+e.message+'</div>'; }
+  finally{ btn.disabled=false; btn.textContent=old; }
+}
+document.getElementById('bmWin').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;document.querySelectorAll('#bmWin button').forEach(x=>x.classList.remove('on'));b.classList.add('on');bmDays=Number(b.dataset.days);});
+document.getElementById('bmLoadBtn').onclick=loadBenchmark;
+document.getElementById('bmAiBtn').onclick=benchmarkAI;
 
 // タブ切り替え
 document.getElementById('tabs').addEventListener('click',e=>{
