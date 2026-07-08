@@ -150,6 +150,7 @@
     <button data-tab="advice">🧠 AI高島</button>
     <button data-tab="compare">⚔️ 競合比較</button>
     <button data-tab="benchmark">🎯 ベンチマーク</button>
+    <button data-tab="emerging">🌱 新興ch分析</button>
     <button data-tab="forecast">🔮 成長予測</button>
   </div>
 
@@ -247,11 +248,34 @@
     </div>
   </div>
 
+  <!-- 新興ch分析 -->
+  <div class="view" id="view-emerging">
+    <div class="card" style="margin-bottom:14px">
+      <div class="panel-title">🌱 新興チャンネル分析（最近開設なのに伸びてる）</div>
+      <div class="hint">同ジャンルで「開設して間もないのに急成長している」チャンネルを発見し、ゼロから伸ばす"初速の秘訣"を高島が抽出します。りくまこRadioと同じスタート地点の成功例です。</div>
+      <div class="controls">
+        <div class="segs" id="emWin">
+          <button data-months="3" class="on">開設3ヶ月以内</button>
+          <button data-months="6">開設6ヶ月以内</button>
+          <button data-months="12">開設1年以内</button>
+        </div>
+        <button class="btn" id="emLoadBtn">発見・分析</button>
+      </div>
+    </div>
+    <div id="emChannels"></div>
+    <div class="card">
+      <div class="panel-title">🧠 高島の総評＆秘訣抽出 → りくまこRadioへ</div>
+      <div class="hint">各チャンネルの総評と、ゼロから伸ばす秘訣、りくまこが今日から真似すべきことを高島がまとめます。</div>
+      <button class="btn pink" id="emAiBtn">秘訣を抽出してもらう</button>
+      <div class="ai-out" id="emAiOut" style="margin-top:16px"></div>
+    </div>
+  </div>
+
   <!-- 成長予測 -->
   <div class="view" id="view-forecast">
     <div class="grid">
       <div class="card">
-        <div class="panel-title">🔮 未来の登録者予測（24ヶ月）</div>
+        <div class="panel-title">🔮 りくまこRadio 未来の登録者予測（24ヶ月）</div>
         <canvas class="chart" id="fcChart"></canvas>
         <div id="fcSummary" style="margin-top:14px"></div>
       </div>
@@ -493,23 +517,68 @@ document.getElementById('bmWin').addEventListener('click',e=>{const b=e.target.c
 document.getElementById('bmLoadBtn').onclick=loadBenchmark;
 document.getElementById('bmAiBtn').onclick=benchmarkAI;
 
-// ── 成長予測 ──────────────────────────────────────────────
-function cadenceFromData(){
-  if(!RAW||RAW.videos.length<2)return null;
-  const ds=RAW.videos.map(v=>new Date(v.publishedAt).getTime()).sort((a,b)=>b-a);
-  const spanDays=(ds[0]-ds[ds.length-1])/86400000||30;
-  return RAW.videos.length/(spanDays/30);
+// ── 新興チャンネル分析 ──────────────────────────────────────
+let EM=null, emMonths=3;
+async function loadEmerging(){
+  const out=document.getElementById('emChannels');
+  out.innerHTML='<div class="card"><span class="spin"></span> 新興チャンネルを探索中…（30〜40秒かかります）</div>';
+  try{
+    const r=await fetch('/api/emerging?months='+emMonths);
+    const d=await r.json(); if(d.error)throw new Error(d.error);
+    EM=d; renderEmerging();
+  }catch(e){ out.innerHTML='<div class="err">⚠️ '+e.message+'</div>'; }
 }
-function prefillForecast(){
-  const c=RAW?RAW.channel:{subscribers:0};
-  const recent=RAW?filtered():[];
-  const avgV=recent.length?Math.round(recent.reduce((a,v)=>a+v.views,0)/recent.length):3000;
-  const cad=cadenceFromData();
+function renderEmerging(){
+  const win={3:'3ヶ月',6:'6ヶ月',12:'1年'}[emMonths];
+  if(!EM.channels.length){ document.getElementById('emChannels').innerHTML='<div class="card"><div class="hint">開設'+win+'以内の急成長チャンネルが見つかりませんでした。期間を広げてみてください。</div></div>'; return; }
+  document.getElementById('emChannels').innerHTML='<div class="bmgrid">'+EM.channels.map((c,i)=>`
+    <div class="bmc">
+      <div class="head"><img src="${c.thumb}"/><div><div class="nm">${c.name}</div>
+        <div class="st">開設 ${Math.round(c.ageMonths)}ヶ月前 ・ 動画 ${fmt(c.totalVideos)}本</div></div>
+        ${i===0?'<span class="rankbadge">最速成長</span>':''}</div>
+      <div class="stats">
+        <div>登録者<b>${fmt(c.subs)}</b></div>
+        <div>月の増加ペース<b style="color:var(--green)">+${fmt(c.velocity)}</b></div>
+        <div>総再生<b>${fmt(c.totalViews)}</b></div>
+      </div>
+      <div class="vids">${(c.top||[]).map(v=>`<a href="${v.url}" target="_blank"><img src="${v.thumb}"/><div class="vv">${fmt(v.views)}回</div><div class="vt">${v.title}</div></a>`).join('')||'<div class="st">動画取得なし</div>'}</div>
+    </div>`).join('')+'</div>';
+}
+async function emergingAI(){
+  const out=document.getElementById('emAiOut'); const btn=document.getElementById('emAiBtn');
+  if(!EM||!EM.channels.length){out.textContent='先に「発見・分析」で新興チャンネルを読み込んでください。';return;}
+  btn.disabled=true; const old=btn.textContent; btn.innerHTML='<span class="spin"></span> 高島が分析中…';
+  const summary=EM.channels.map(c=>`■${c.name}：開設${Math.round(c.ageMonths)}ヶ月・登録${fmt(c.subs)}（月+${fmt(c.velocity)}ペース）・動画${c.totalVideos}本\n  代表作: `+(c.top||[]).map(v=>`「${v.title}」${fmt(v.views)}回(${v.isShort?'short':'long'})`).join(' / ')).join('\n');
+  try{
+    const r=await fetch('/api/emerging-ai',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({summary})});
+    const d=await r.json(); if(d.error)throw new Error(d.error);
+    out.innerHTML=mdLite(d.text);
+  }catch(e){ out.innerHTML='<div class="err">⚠️ '+e.message+'</div>'; }
+  finally{ btn.disabled=false; btn.textContent=old; }
+}
+document.getElementById('emWin').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;document.querySelectorAll('#emWin button').forEach(x=>x.classList.remove('on'));b.classList.add('on');emMonths=Number(b.dataset.months);});
+document.getElementById('emLoadBtn').onclick=loadEmerging;
+document.getElementById('emAiBtn').onclick=emergingAI;
+
+// ── 成長予測（りくまこRadio固定・データ自動反映）──────────────
+let RIKUMAKO=null;
+async function prefillForecast(){
+  // りくまこRadioのデータを取得して自動反映（未取得なら取りに行く）
+  if(!RIKUMAKO){
+    try{ const r=await fetch('/api/analytics?channel=&max=50'); RIKUMAKO=await r.json(); }catch{ RIKUMAKO=null; }
+  }
+  const d=RIKUMAKO;
+  const c=d&&!d.error?d.channel:{subscribers:0};
+  const vids=d&&d.videos?d.videos:[];
+  let cad=null;
+  if(vids.length>=2){ const ds=vids.map(v=>new Date(v.publishedAt).getTime()).sort((a,b)=>b-a); const span=(ds[0]-ds[ds.length-1])/86400000||30; cad=vids.length/(span/30); }
+  const avgV=vids.length?Math.round(vids.reduce((a,v)=>a+v.views,0)/vids.length):0;
+  // 動画がまだ無い場合は「これから始める」想定の初期値
   document.getElementById('fcSubs').value=c.subscribers||0;
-  document.getElementById('fcPosts').value=cad?Math.max(1,Math.round(cad)):12;
+  document.getElementById('fcPosts').value=cad?Math.max(1,Math.round(cad)):20;
   document.getElementById('fcViews').value=avgV||3000;
   document.getElementById('fcConv').value=1.0;
-  document.getElementById('fcGoal').value=(RAW?RAW.goal:1000000);
+  document.getElementById('fcGoal').value=(d&&d.goal)||1000000;
 }
 function runForecast(){
   const S0=+document.getElementById('fcSubs').value||0;
@@ -547,7 +616,7 @@ document.getElementById('tabs').addEventListener('click',e=>{
   document.querySelectorAll('#tabs button').forEach(x=>x.classList.remove('on')); b.classList.add('on');
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
   document.getElementById('view-'+b.dataset.tab).classList.add('on');
-  if(b.dataset.tab==='forecast'){ prefillForecast(); runForecast(); }
+  if(b.dataset.tab==='forecast'){ prefillForecast().then(runForecast); }
 });
 document.getElementById('loadBtn').onclick=load;
 document.getElementById('channelInput').addEventListener('keydown',e=>{if(e.key==='Enter')load();});

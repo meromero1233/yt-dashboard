@@ -247,6 +247,70 @@ async function getAnalytics(channelInput, maxVideos = 50) {
   };
 }
 
+// 新興チャンネル発見：同ジャンルで「開設◯ヶ月以内」なのに伸びているチャンネル
+async function getEmergingChannels(months) {
+  const since = Date.now() - months * 30 * 86400000;
+  const queries = [
+    '都市伝説', '雑学 豆知識', '未解決事件', '怖い話',
+    '闇 ゆっくり解説', '都市伝説 shorts', '雑学 shorts', 'ゾッとする話', '人怖',
+  ];
+  const chIds = new Set();
+  for (const q of queries) {
+    const s = await yt('search', {
+      part: 'snippet', q, type: 'video', order: 'viewCount',
+      publishedAfter: new Date(Date.now() - 120 * 86400000).toISOString(),
+      maxResults: '25', regionCode: 'JP', relevanceLanguage: 'ja',
+    }).catch(() => null);
+    for (const it of s?.items || []) chIds.add(it.snippet.channelId);
+  }
+
+  const allIds = [...chIds];
+  if (!allIds.length) return [];
+  const chItems = [];
+  for (let i = 0; i < allIds.length; i += 50) {
+    const chd = await yt('channels', { part: 'snippet,statistics,contentDetails', id: allIds.slice(i, i + 50).join(',') });
+    chItems.push(...(chd.items || []));
+  }
+
+  let list = chItems.map((c) => ({
+    id: c.id,
+    name: c.snippet.title,
+    thumb: c.snippet.thumbnails?.default?.url || '',
+    createdAt: c.snippet.publishedAt,
+    subs: Number(c.statistics?.subscriberCount || 0),
+    totalViews: Number(c.statistics?.viewCount || 0),
+    totalVideos: Number(c.statistics?.videoCount || 0),
+    uploads: c.contentDetails?.relatedPlaylists?.uploads,
+  })).filter((c) => new Date(c.createdAt).getTime() >= since && c.totalVideos > 0 && c.subs > 0);
+
+  list.forEach((c) => {
+    c.ageMonths = Math.max(0.5, (Date.now() - new Date(c.createdAt).getTime()) / (30 * 86400000));
+    c.velocity = Math.round(c.subs / c.ageMonths); // 月あたり登録者増ペース
+  });
+  list.sort((a, b) => b.velocity - a.velocity);
+  list = list.slice(0, 6);
+
+  // 各チャンネルの代表動画（再生上位3本）を取得
+  for (const c of list) {
+    try {
+      const pl = await yt('playlistItems', { part: 'contentDetails', playlistId: c.uploads, maxResults: '20' });
+      const vids = (pl.items || []).map((i) => i.contentDetails.videoId).slice(0, 20);
+      if (vids.length) {
+        const vd = await yt('videos', { part: 'snippet,statistics,contentDetails', id: vids.join(',') });
+        c.top = (vd.items || []).map((v) => {
+          const dur = parseDuration(v.contentDetails?.duration);
+          return {
+            title: v.snippet.title, views: Number(v.statistics?.viewCount || 0),
+            thumb: v.snippet.thumbnails?.medium?.url || '', isShort: dur > 0 && dur <= SHORT_MAX,
+            url: `https://www.youtube.com/watch?v=${v.id}`,
+          };
+        }).sort((a, b) => b.views - a.views).slice(0, 3);
+      } else c.top = [];
+    } catch { c.top = []; }
+  }
+  return list;
+}
+
 // ── HTTP サーバー ─────────────────────────────────────────────────────────────
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css' };
 
@@ -289,6 +353,52 @@ const server = http.createServer(async (req, res) => {
       channels.sort((a, b) => b.recentAvgViews - a.recentAvgViews);
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ days, channels, fetchedAt: new Date().toISOString() }));
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  // 新興チャンネル発見
+  if (url.pathname === '/api/emerging') {
+    try {
+      const months = Number(url.searchParams.get('months') || 3);
+      const channels = await getEmergingChannels(months);
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ months, channels, fetchedAt: new Date().toISOString() }));
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  // 新興チャンネルAI分析（POST：各chの高島総評＋秘訣抽出＋りくまこへの適用）
+  if (url.pathname === '/api/emerging-ai' && req.method === 'POST') {
+    try {
+      const { summary } = JSON.parse((await readBody(req)) || '{}');
+      let web = '';
+      const { answer, results } = await webSearch('YouTube 新規チャンネル 短期間 伸ばす 初速 攻略 2026', 5);
+      if (answer || results) web = `${answer}\n${results}`;
+
+      const user = `以下は、都市伝説・雑学・未解決系ジャンルで「最近開設された（新興）のに伸びているYouTubeチャンネル」の実データです。りくまこRadioも開設したばかりのゼロスタートなので、この新興チャンネルたちから学べる"初速の秘訣"を知りたいです。
+
+【新興チャンネルの実データ】
+${summary}
+
+【Web情報】
+${web || '（一般知見で補ってください）'}
+
+高島として次の形式で：
+■ 各チャンネルの総評（1チャンネルにつき2〜3行で分かりやすく。「開設◯ヶ月で登録◯万＝月◯人ペース」という速さに触れつつ、なぜ短期間で伸びたのか"勝因"をズバッと。専門用語を避け、初心者にも分かる言葉で）
+■ 新興が伸びる共通の秘訣（3〜5個。ゼロから始める人が最初にやるべきこと）
+■ りくまこRadioが今日から真似すべきこと（3つ、具体的に）
+■ 高島の一言（背中を押す短い言葉）`;
+
+      const text = await askClaude(TAKASHIMA, user, 2200);
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ text }));
     } catch (e) {
       res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ error: e.message }));
