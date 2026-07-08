@@ -340,20 +340,29 @@ async function getBestTiming() {
     for (const it of s?.items || []) ids.add(it.id.videoId);
   }
   const dow = Array(7).fill(0), hour = Array(24).fill(0);
+  const slotMap = new Map(); // "dow-hour" → 重み合計
   const allIds = [...ids];
   for (let i = 0; i < allIds.length; i += 50) {
     const vd = await yt('videos', { part: 'snippet,statistics', id: allIds.slice(i, i + 50).join(',') });
     for (const v of vd.items || []) {
       const t = new Date(v.snippet.publishedAt).getTime();
       const jst = new Date(t + 9 * 3600e3);
+      const d = jst.getUTCDay(), h = jst.getUTCHours();
       const w = Math.log10(Number(v.statistics?.viewCount || 1) + 10); // 再生数で重み（対数）
-      dow[jst.getUTCDay()] += w;
-      hour[jst.getUTCHours()] += w;
+      dow[d] += w;
+      hour[h] += w;
+      const k = `${d}-${h}`;
+      slotMap.set(k, (slotMap.get(k) || 0) + w);
     }
   }
   const bestDow = dow.indexOf(Math.max(...dow));
   const bestHour = hour.indexOf(Math.max(...hour));
-  return { dow, hour, bestDow, bestHour, sample: allIds.length };
+  // 曜日×時間帯のベスト5スロット
+  const slots = [...slotMap.entries()]
+    .map(([k, score]) => { const [d, h] = k.split('-').map(Number); return { dow: d, hour: h, score }; })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
+  return { dow, hour, bestDow, bestHour, slots, sample: allIds.length };
 }
 
 // ── HTTP サーバー ─────────────────────────────────────────────────────────────

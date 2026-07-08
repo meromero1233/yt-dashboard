@@ -81,7 +81,7 @@
   .ai-out{line-height:1.8;font-size:14px}
   .ai-out h3{font-size:16px;color:var(--cyan);margin:18px 0 8px;padding-bottom:6px;border-bottom:1px solid var(--line)}
   .ai-out h4{font-size:14px;color:var(--gold);margin:14px 0 4px}
-  .ai-out b{color:var(--text);font-weight:800}
+  .ai-out b{color:var(--gold);font-weight:800}
   .ai-out .ln{margin:3px 0}
   .ai-out hr{border:none;border-top:1px dashed var(--line);margin:16px 0}
   .cmp{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
@@ -118,6 +118,11 @@
   .mile{display:flex;justify-content:space-between;font-size:11px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:5px 10px}
   .mile .mm{font-weight:800;color:var(--gold)}
   .mile span:last-child{color:var(--muted)}
+  .slot{display:flex;align-items:center;gap:12px;padding:8px 12px;border-bottom:1px solid var(--line)}
+  .slot:last-child{border:none}
+  .slot .sn{width:22px;height:22px;flex:none;border-radius:50%;background:var(--panel);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:var(--gold)}
+  .slot .sd{font-size:14px;font-weight:700}
+  .slot .scd{margin-left:auto;font-size:12px;color:var(--cyan)}
   @media(max-width:1000px){.bmgrid{grid-template-columns:1fr}}
   .fcin{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
   .fcin label{font-size:12px;color:var(--muted)}
@@ -543,26 +548,32 @@ async function loadTiming(){
   card.style.display=''; body.innerHTML='<span class="spin"></span> 人気動画の投稿時間を集計中…';
   try{
     const r=await fetch('/api/timing'); const t=await r.json(); if(t.error)throw new Error(t.error);
-    // 次のベスト曜日までのカウントダウン（JST基準）
+    const slots=t.slots&&t.slots.length?t.slots:[{dow:t.bestDow,hour:t.bestHour}];
     const nowJst=new Date(Date.now()+9*3600e3);
-    let days=(t.bestDow-nowJst.getUTCDay()+7)%7;
-    const sameDayPassed=days===0 && nowJst.getUTCHours()>=t.bestHour;
-    if(sameDayPassed)days=7;
-    const target=new Date(nowJst); target.setUTCDate(target.getUTCDate()+days); target.setUTCHours(t.bestHour,0,0,0);
-    const hoursLeft=Math.max(0,Math.round((target-nowJst)/3600e3));
-    const dd=Math.floor(hoursLeft/24), hh=hoursLeft%24;
-    const maxDow=Math.max(...t.dow), maxHour=Math.max(...t.hour);
+    // 各スロットの「次の到来日時」とカウントダウンを計算
+    const withCd=slots.map(s=>{
+      let days=(s.dow-nowJst.getUTCDay()+7)%7;
+      if(days===0 && nowJst.getUTCHours()>=s.hour)days=7;
+      const target=new Date(nowJst); target.setUTCDate(target.getUTCDate()+days); target.setUTCHours(s.hour,0,0,0);
+      const hoursLeft=Math.max(0,Math.round((target-nowJst)/3600e3));
+      return {...s,days,target,dd:Math.floor(hoursLeft/24),hh:hoursLeft%24};
+    });
+    const top=withCd[0];
+    const maxDow=Math.max(...t.dow);
     body.innerHTML=`
       <div class="two" style="gap:14px">
-        <div class="insight" style="margin:0"><div style="font-size:12px;color:var(--muted)">🎯 理想の投稿タイミング</div>
-          <div style="font-size:22px;font-weight:800;margin-top:6px"><b style="color:var(--cyan)">${DOWJP[t.bestDow]}曜 ${t.bestHour}時台</b></div>
+        <div class="insight" style="margin:0"><div style="font-size:12px;color:var(--muted)">🎯 ベスト投稿タイミング</div>
+          <div style="font-size:22px;font-weight:800;margin-top:6px"><b style="color:var(--cyan)">${DOWJP[top.dow]}曜 ${top.hour}時台</b></div>
           <div style="font-size:12px;color:var(--muted);margin-top:6px">同ジャンル人気${t.sample}本の投稿時間を再生数で重み付け</div></div>
         <div class="insight" style="margin:0"><div style="font-size:12px;color:var(--muted)">⏳ 次のベスト投稿日まで</div>
-          <div style="font-size:22px;font-weight:800;margin-top:6px;color:var(--gold)">${days===0?'今日！':`あと ${dd}日 ${hh}時間`}</div>
-          <div style="font-size:12px;color:var(--muted);margin-top:6px">${target.getUTCMonth()+1}/${target.getUTCDate()}（${DOWJP[t.bestDow]}）${t.bestHour}:00 JST が狙い目</div></div>
+          <div style="font-size:22px;font-weight:800;margin-top:6px;color:var(--gold)">${top.days===0?'今日！':`あと ${top.dd}日 ${top.hh}時間`}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:6px">${top.target.getUTCMonth()+1}/${top.target.getUTCDate()}（${DOWJP[top.dow]}）${top.hour}:00 JST が狙い目</div></div>
       </div>
-      <div style="margin-top:12px;display:flex;gap:3px;align-items:flex-end;height:52px">
-        ${t.dow.map((v,i)=>`<div style="flex:1;text-align:center"><div style="background:${i===t.bestDow?'var(--cyan)':'#2b3a52'};height:${Math.round(v/maxDow*40)+4}px;border-radius:4px"></div><div style="font-size:10px;color:var(--muted);margin-top:3px">${DOWJP[i]}</div></div>`).join('')}
+      <div style="margin-top:14px"><div style="font-size:12px;color:var(--muted);font-weight:700;margin-bottom:8px">🏅 狙うべき時間帯 ベスト5</div>
+        ${withCd.map((s,i)=>`<div class="slot"><span class="sn">${i+1}</span><span class="sd">${DOWJP[s.dow]}曜 ${s.hour}時台</span><span class="scd">${s.days===0?'今日狙える！':`次は ${s.dd}日${s.hh}時間後`}</span></div>`).join('')}
+      </div>
+      <div style="margin-top:14px;display:flex;gap:3px;align-items:flex-end;height:52px">
+        ${t.dow.map((v,i)=>`<div style="flex:1;text-align:center"><div style="background:${i===top.dow?'var(--cyan)':'#2b3a52'};height:${Math.round(v/maxDow*40)+4}px;border-radius:4px"></div><div style="font-size:10px;color:var(--muted);margin-top:3px">${DOWJP[i]}</div></div>`).join('')}
       </div>`;
   }catch(e){ body.innerHTML='<div class="err">⚠️ '+e.message+'</div>'; }
 }
