@@ -114,6 +114,10 @@
   .bmc .vids .vt{font-size:10px;line-height:1.3;margin-top:4px;height:26px;overflow:hidden;color:var(--muted)}
   .bmc .vids .vv{font-size:11px;font-weight:800;color:var(--gold)}
   .rankbadge{font-size:10px;background:var(--gold);color:#04121a;padding:2px 8px;border-radius:20px;font-weight:800;margin-left:auto}
+  .miles{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
+  .mile{display:flex;justify-content:space-between;font-size:11px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:5px 10px}
+  .mile .mm{font-weight:800;color:var(--gold)}
+  .mile span:last-child{color:var(--muted)}
   @media(max-width:1000px){.bmgrid{grid-template-columns:1fr}}
   .fcin{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
   .fcin label{font-size:12px;color:var(--muted)}
@@ -255,12 +259,15 @@
       <div class="hint">同ジャンルで「開設して間もないのに急成長している」チャンネルを発見し、ゼロから伸ばす"初速の秘訣"を高島が抽出します。りくまこRadioと同じスタート地点の成功例です。</div>
       <div class="controls">
         <div class="segs" id="emWin">
-          <button data-months="3" class="on">開設3ヶ月以内</button>
-          <button data-months="6">開設6ヶ月以内</button>
-          <button data-months="12">開設1年以内</button>
+          <button data-months="3">開設3ヶ月以内</button>
+          <button data-months="6" class="on">開設6ヶ月以内</button>
         </div>
         <button class="btn" id="emLoadBtn">発見・分析</button>
       </div>
+    </div>
+    <div class="card" id="timingCard" style="display:none;margin-bottom:14px">
+      <div class="panel-title">🕒 最適な投稿タイミング（同ジャンル人気動画から算出）</div>
+      <div id="timingBody"></div>
     </div>
     <div id="emChannels"></div>
     <div class="card">
@@ -518,15 +525,46 @@ document.getElementById('bmLoadBtn').onclick=loadBenchmark;
 document.getElementById('bmAiBtn').onclick=benchmarkAI;
 
 // ── 新興チャンネル分析 ──────────────────────────────────────
-let EM=null, emMonths=3;
+let EM=null, emMonths=6;
 async function loadEmerging(){
   const out=document.getElementById('emChannels');
   out.innerHTML='<div class="card"><span class="spin"></span> 新興チャンネルを探索中…（30〜40秒かかります）</div>';
+  loadTiming(); // 投稿タイミングも並行取得
   try{
     const r=await fetch('/api/emerging?months='+emMonths);
     const d=await r.json(); if(d.error)throw new Error(d.error);
     EM=d; renderEmerging();
   }catch(e){ out.innerHTML='<div class="err">⚠️ '+e.message+'</div>'; }
+}
+
+const DOWJP=['日','月','火','水','木','金','土'];
+async function loadTiming(){
+  const card=document.getElementById('timingCard'), body=document.getElementById('timingBody');
+  card.style.display=''; body.innerHTML='<span class="spin"></span> 人気動画の投稿時間を集計中…';
+  try{
+    const r=await fetch('/api/timing'); const t=await r.json(); if(t.error)throw new Error(t.error);
+    // 次のベスト曜日までのカウントダウン（JST基準）
+    const nowJst=new Date(Date.now()+9*3600e3);
+    let days=(t.bestDow-nowJst.getUTCDay()+7)%7;
+    const sameDayPassed=days===0 && nowJst.getUTCHours()>=t.bestHour;
+    if(sameDayPassed)days=7;
+    const target=new Date(nowJst); target.setUTCDate(target.getUTCDate()+days); target.setUTCHours(t.bestHour,0,0,0);
+    const hoursLeft=Math.max(0,Math.round((target-nowJst)/3600e3));
+    const dd=Math.floor(hoursLeft/24), hh=hoursLeft%24;
+    const maxDow=Math.max(...t.dow), maxHour=Math.max(...t.hour);
+    body.innerHTML=`
+      <div class="two" style="gap:14px">
+        <div class="insight" style="margin:0"><div style="font-size:12px;color:var(--muted)">🎯 理想の投稿タイミング</div>
+          <div style="font-size:22px;font-weight:800;margin-top:6px"><b style="color:var(--cyan)">${DOWJP[t.bestDow]}曜 ${t.bestHour}時台</b></div>
+          <div style="font-size:12px;color:var(--muted);margin-top:6px">同ジャンル人気${t.sample}本の投稿時間を再生数で重み付け</div></div>
+        <div class="insight" style="margin:0"><div style="font-size:12px;color:var(--muted)">⏳ 次のベスト投稿日まで</div>
+          <div style="font-size:22px;font-weight:800;margin-top:6px;color:var(--gold)">${days===0?'今日！':`あと ${dd}日 ${hh}時間`}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:6px">${target.getUTCMonth()+1}/${target.getUTCDate()}（${DOWJP[t.bestDow]}）${t.bestHour}:00 JST が狙い目</div></div>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:3px;align-items:flex-end;height:52px">
+        ${t.dow.map((v,i)=>`<div style="flex:1;text-align:center"><div style="background:${i===t.bestDow?'var(--cyan)':'#2b3a52'};height:${Math.round(v/maxDow*40)+4}px;border-radius:4px"></div><div style="font-size:10px;color:var(--muted);margin-top:3px">${DOWJP[i]}</div></div>`).join('')}
+      </div>`;
+  }catch(e){ body.innerHTML='<div class="err">⚠️ '+e.message+'</div>'; }
 }
 function renderEmerging(){
   const win={3:'3ヶ月',6:'6ヶ月',12:'1年'}[emMonths];
@@ -539,8 +577,10 @@ function renderEmerging(){
       <div class="stats">
         <div>登録者<b>${fmt(c.subs)}</b></div>
         <div>月の増加ペース<b style="color:var(--green)">+${fmt(c.velocity)}</b></div>
-        <div>総再生<b>${fmt(c.totalViews)}</b></div>
+        <div>投稿頻度<b>週${c.freqPerWeek}本</b></div>
+        <div>ショート比率<b style="color:var(--pink)">${c.shortRatio}%</b></div>
       </div>
+      ${(c.milestones&&c.milestones.length)?`<div class="miles">${c.milestones.map(m=>`<div class="mile"><span class="mm">${fmt(m.m)}人</span><span>推定 ${m.months}ヶ月 / 約${fmt(m.videos)}本</span></div>`).join('')}</div>`:''}
       <div class="vids">${(c.top||[]).map(v=>`<a href="${v.url}" target="_blank"><img src="${v.thumb}"/><div class="vv">${fmt(v.views)}回</div><div class="vt">${v.title}</div></a>`).join('')||'<div class="st">動画取得なし</div>'}</div>
     </div>`).join('')+'</div>';
 }
@@ -548,7 +588,7 @@ async function emergingAI(){
   const out=document.getElementById('emAiOut'); const btn=document.getElementById('emAiBtn');
   if(!EM||!EM.channels.length){out.textContent='先に「発見・分析」で新興チャンネルを読み込んでください。';return;}
   btn.disabled=true; const old=btn.textContent; btn.innerHTML='<span class="spin"></span> 高島が分析中…';
-  const summary=EM.channels.map(c=>`■${c.name}：開設${Math.round(c.ageMonths)}ヶ月・登録${fmt(c.subs)}（月+${fmt(c.velocity)}ペース）・動画${c.totalVideos}本\n  代表作: `+(c.top||[]).map(v=>`「${v.title}」${fmt(v.views)}回(${v.isShort?'short':'long'})`).join(' / ')).join('\n');
+  const summary=EM.channels.map(c=>`■${c.name}：開設${Math.round(c.ageMonths)}ヶ月・登録${fmt(c.subs)}（月+${fmt(c.velocity)}ペース）・総動画${c.totalVideos}本・投稿頻度週${c.freqPerWeek}本・ショート比率${c.shortRatio}%\n  マイルストーン: `+((c.milestones||[]).map(m=>`${fmt(m.m)}人=推定${m.months}ヶ月/約${fmt(m.videos)}本`).join(' , ')||'なし')+`\n  代表作: `+(c.top||[]).map(v=>`「${v.title}」${fmt(v.views)}回(${v.isShort?'short':'long'})`).join(' / ')).join('\n');
   try{
     const r=await fetch('/api/emerging-ai',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({summary})});
     const d=await r.json(); if(d.error)throw new Error(d.error);

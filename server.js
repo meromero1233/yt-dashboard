@@ -290,25 +290,70 @@ async function getEmergingChannels(months) {
   list.sort((a, b) => b.velocity - a.velocity);
   list = list.slice(0, 6);
 
-  // 各チャンネルの代表動画（再生上位3本）を取得
+  // 各チャンネルの動画を取得し、投稿頻度・ショート比率・マイルストーン推定を計算
+  const MILES = [10000, 30000, 50000, 100000];
   for (const c of list) {
+    c.freqPerMonth = Math.round((c.totalVideos / c.ageMonths) * 10) / 10;
+    c.freqPerWeek = Math.round((c.totalVideos / c.ageMonths / 4.33) * 10) / 10;
+
+    // マイルストーン推定（現在の登録ペースが一定と仮定した概算）
+    c.milestones = MILES.filter((m) => c.subs >= m).map((m) => {
+      const months = c.velocity > 0 ? m / c.velocity : null;
+      return {
+        m, months: months ? Math.round(months * 10) / 10 : null,
+        videos: months ? Math.round(c.freqPerMonth * months) : null,
+      };
+    });
+
     try {
-      const pl = await yt('playlistItems', { part: 'contentDetails', playlistId: c.uploads, maxResults: '20' });
-      const vids = (pl.items || []).map((i) => i.contentDetails.videoId).slice(0, 20);
+      const pl = await yt('playlistItems', { part: 'contentDetails', playlistId: c.uploads, maxResults: '30' });
+      const vids = (pl.items || []).map((i) => i.contentDetails.videoId).slice(0, 30);
       if (vids.length) {
         const vd = await yt('videos', { part: 'snippet,statistics,contentDetails', id: vids.join(',') });
-        c.top = (vd.items || []).map((v) => {
+        const arr = (vd.items || []).map((v) => {
           const dur = parseDuration(v.contentDetails?.duration);
           return {
             title: v.snippet.title, views: Number(v.statistics?.viewCount || 0),
             thumb: v.snippet.thumbnails?.medium?.url || '', isShort: dur > 0 && dur <= SHORT_MAX,
             url: `https://www.youtube.com/watch?v=${v.id}`,
           };
-        }).sort((a, b) => b.views - a.views).slice(0, 3);
-      } else c.top = [];
-    } catch { c.top = []; }
+        });
+        const sh = arr.filter((v) => v.isShort).length;
+        c.shortRatio = arr.length ? Math.round(sh / arr.length * 100) : 0;
+        c.top = [...arr].sort((a, b) => b.views - a.views).slice(0, 3);
+      } else { c.top = []; c.shortRatio = 0; }
+    } catch { c.top = []; c.shortRatio = 0; }
   }
   return list;
+}
+
+// 最適投稿タイミング：同ジャンルの人気動画の投稿曜日・時間（JST）を再生数で重み付け集計
+async function getBestTiming() {
+  const queries = ['都市伝説', '雑学 豆知識', '未解決事件', '怖い話'];
+  const ids = new Set();
+  for (const q of queries) {
+    const s = await yt('search', {
+      part: 'snippet', q, type: 'video', order: 'viewCount',
+      publishedAfter: new Date(Date.now() - 120 * 86400000).toISOString(),
+      maxResults: '25', regionCode: 'JP', relevanceLanguage: 'ja',
+    }).catch(() => null);
+    for (const it of s?.items || []) ids.add(it.id.videoId);
+  }
+  const dow = Array(7).fill(0), hour = Array(24).fill(0);
+  const allIds = [...ids];
+  for (let i = 0; i < allIds.length; i += 50) {
+    const vd = await yt('videos', { part: 'snippet,statistics', id: allIds.slice(i, i + 50).join(',') });
+    for (const v of vd.items || []) {
+      const t = new Date(v.snippet.publishedAt).getTime();
+      const jst = new Date(t + 9 * 3600e3);
+      const w = Math.log10(Number(v.statistics?.viewCount || 1) + 10); // 再生数で重み（対数）
+      dow[jst.getUTCDay()] += w;
+      hour[jst.getUTCHours()] += w;
+    }
+  }
+  const bestDow = dow.indexOf(Math.max(...dow));
+  const bestHour = hour.indexOf(Math.max(...hour));
+  return { dow, hour, bestDow, bestHour, sample: allIds.length };
 }
 
 // ── HTTP サーバー ─────────────────────────────────────────────────────────────
@@ -374,29 +419,50 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // 最適投稿タイミング
+  if (url.pathname === '/api/timing') {
+    try {
+      const t = await getBestTiming();
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify(t));
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
   // 新興チャンネルAI分析（POST：各chの高島総評＋秘訣抽出＋りくまこへの適用）
   if (url.pathname === '/api/emerging-ai' && req.method === 'POST') {
     try {
       const { summary } = JSON.parse((await readBody(req)) || '{}');
       let web = '';
-      const { answer, results } = await webSearch('YouTube 新規チャンネル 短期間 伸ばす 初速 攻略 2026', 5);
-      if (answer || results) web = `${answer}\n${results}`;
+      for (const q of [
+        'YouTube アルゴリズム 2026 重視 されている 指標 伸ばし方',
+        '都市伝説 雑学 YouTube 今 バズってる トレンド ネタ 2026',
+      ]) {
+        const { answer, results } = await webSearch(q, 4);
+        if (answer || results) web += `▼「${q}」\n${answer}\n${results}\n\n`;
+      }
 
-      const user = `以下は、都市伝説・雑学・未解決系ジャンルで「最近開設された（新興）のに伸びているYouTubeチャンネル」の実データです。りくまこRadioも開設したばかりのゼロスタートなので、この新興チャンネルたちから学べる"初速の秘訣"を知りたいです。
+      const user = `以下は、都市伝説・雑学・未解決系ジャンルで「開設6ヶ月以内なのに急成長している新興YouTubeチャンネル」の実データです（投稿頻度・ショート比率・マイルストーン到達の推定つき）。りくまこRadioも開設したばかりのゼロスタートなので、この新興チャンネルから学べる"初速の勝ちパターン"を知りたい。
 
 【新興チャンネルの実データ】
 ${summary}
 
-【Web情報】
+【Web情報（アルゴリズム・トレンド）】
 ${web || '（一般知見で補ってください）'}
 
-高島として次の形式で：
-■ 各チャンネルの総評（1チャンネルにつき2〜3行で分かりやすく。「開設◯ヶ月で登録◯万＝月◯人ペース」という速さに触れつつ、なぜ短期間で伸びたのか"勝因"をズバッと。専門用語を避け、初心者にも分かる言葉で）
-■ 新興が伸びる共通の秘訣（3〜5個。ゼロから始める人が最初にやるべきこと）
-■ りくまこRadioが今日から真似すべきこと（3つ、具体的に）
+高島として次の形式で、分かりやすく：
+■ 各チャンネルの総評（1chにつき2〜3行。「開設◯ヶ月で登録◯万＝月◯人ペース」の速さと、投稿頻度・ショート比率に触れつつ、勝因をズバッと。初心者にも分かる言葉で）
+■ ベストな投稿頻度（新興の成功データから逆算して「週◯本・ショート◯：ロング◯」など具体的に。なぜその頻度かも）
+■ 今のYouTubeアルゴリズムが重視していること（データとWeb情報から3〜4個。ショート起点の集客→ロングで定着、視聴維持率、初速など具体的に）
+■ 今アツいトレンド・ネタの方向性（このジャンルで今伸びている切り口を具体的に3つ）
+■ 動画の構成・脚本で重視すべきこと（冒頭フック・展開・オチなど、伸びてる動画に共通する型を3〜4個）
+■ りくまこRadioが今日から実行すべきこと（3つ、具体的に）
 ■ 高島の一言（背中を押す短い言葉）`;
 
-      const text = await askClaude(TAKASHIMA, user, 2200);
+      const text = await askClaude(TAKASHIMA, user, 2600);
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ text }));
     } catch (e) {
