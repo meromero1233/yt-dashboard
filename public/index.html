@@ -115,6 +115,8 @@
   .emact{display:flex;gap:8px;margin:8px 0 4px}
   .embtn{font-size:11px;border:1px solid var(--line);border-radius:8px;padding:4px 10px;cursor:pointer;color:var(--muted)}
   .embtn:hover{border-color:var(--cyan);color:var(--text)}
+  .emrev{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--cyan);border-radius:10px;padding:10px 12px;margin:8px 0 10px;font-size:13px;line-height:1.6}
+  .emrev>b{color:var(--cyan);font-size:12px}
   .bmgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:14px}
   .bmc{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:16px;padding:16px}
   .bmc .head{display:flex;align-items:center;gap:12px;margin-bottom:12px}
@@ -292,11 +294,12 @@
       <div class="panel-title">🕒 最適な投稿タイミング（同ジャンル人気動画から算出）</div>
       <div id="timingBody"></div>
     </div>
-    <div class="card" style="margin-bottom:14px">
-      <div class="panel-title">🧠 高島の総評＆秘訣抽出 → りくまこRadioへ</div>
+    <div id="emChannels"></div>
+    <div class="card" style="margin-top:14px">
+      <div class="panel-title">🧠 全体の秘訣まとめ → りくまこRadioへ</div>
+      <div class="hint">各チャンネルの総評は上の各カード内に。ここは全体から導いた「勝ちパターン」のまとめです。</div>
       <div class="ai-out" id="emAiOut" style="margin-top:8px"></div>
     </div>
-    <div id="emChannels"></div>
   </div>
 
   <!-- 成長予測 -->
@@ -529,9 +532,13 @@ function renderDash(){
   if(bc.length<2){ document.getElementById('bmChannels').innerHTML=quotaMsg; }
   else renderBenchmark(bc);
   document.getElementById('bmAiOut').innerHTML=DASH.benchmarkAdvice?mdLite(DASH.benchmarkAdvice):'<div class="hint">分析は自動取得の完了後に表示されます。</div>';
+  // emergingAdvice は {perChannel, overall} オブジェクト（旧形式の文字列にも対応）
+  const adv=DASH.emergingAdvice;
+  const perChannel=(adv&&typeof adv==='object')?(adv.perChannel||{}):{};
+  const overall=(adv&&typeof adv==='object')?(adv.overall||''):(adv||'');
   if(ec.length<1){ document.getElementById('emChannels').innerHTML=quotaMsg; }
-  else { EM={channels:ec}; renderEmerging(); }
-  document.getElementById('emAiOut').innerHTML=DASH.emergingAdvice?mdLite(DASH.emergingAdvice):'<div class="hint">分析は自動取得の完了後に表示されます。</div>';
+  else { EM={channels:ec,perChannel}; renderEmerging(); }
+  document.getElementById('emAiOut').innerHTML=overall?mdLite(overall):'<div class="hint">分析は自動取得の完了後に表示されます。</div>';
   renderTiming(DASH.timing);
 }
 async function refreshDash(btn){
@@ -667,6 +674,11 @@ function renderTiming(t){
       </div>`;
   }catch(e){ body.innerHTML='<div class="err">⚠️ '+e.message+'</div>'; }
 }
+function emReview(name){
+  const pc=(EM&&EM.perChannel)||{}; if(pc[name])return mdLite(pc[name]);
+  // 完全一致しない場合は部分一致で拾う
+  const k=Object.keys(pc).find(x=>x&&(x.includes(name)||name.includes(x))); return k?mdLite(pc[k]):'';
+}
 function renderEmerging(){
   if(!EM.channels.length){ document.getElementById('emChannels').innerHTML='<div class="card"><div class="hint">急成長中の新興チャンネルが見つかりませんでした。「今すぐ更新」で再取得してみてください。</div></div>'; return; }
   document.getElementById('emChannels').innerHTML='<div class="bmgrid">'+EM.channels.map((c,i)=>`
@@ -677,6 +689,7 @@ function renderEmerging(){
       <div class="emact">
         ${c.pinned?`<span class="embtn" data-emunpin="${c.id}">📌 ピン解除</span>`:`<span class="embtn" data-empin="${c.id}">📌 ピン留め</span><span class="embtn" data-emhide="${c.id}">🗑 除外</span>`}
       </div>
+      ${emReview(c.name)?`<div class="emrev">🧠 <b>高島の総評</b><div>${emReview(c.name)}</div></div>`:''}
       <div class="stats">
         <div>登録者<b>${fmt(c.subs)}</b></div>
         <div>月の増加ペース<b style="color:var(--green)">+${fmt(c.velocity)}</b></div>

@@ -449,6 +449,7 @@ async function aiEmerging(channels) {
   for (const q of ['YouTube アルゴリズム 2026 重視 指標 伸ばし方', '都市伝説 雑学 YouTube 今 バズってる トレンド ネタ 2026']) {
     const { answer, results } = await webSearch(q, 4); if (answer || results) web += `▼「${q}」\n${answer}\n${results}\n\n`;
   }
+  const names = channels.map((c) => c.name);
   const user = `以下は、都市伝説・雑学・未解決系ジャンルで「開設6ヶ月以内なのに急成長している新興YouTubeチャンネル」の実データ（投稿頻度・ショート比率・マイルストーン推定つき）です。りくまこRadioも開設したばかりのゼロスタート。この新興から学べる"初速の勝ちパターン"を知りたい。
 
 【新興チャンネルの実データ】
@@ -457,15 +458,33 @@ ${summarizeEmerging(channels)}
 【Web情報（アルゴリズム・トレンド）】
 ${web || '（一般知見で補ってください）'}
 
-高島として、分かりやすく：
-■ 各チャンネルの総評（1chにつき2〜3行。速さ・投稿頻度・ショート比率に触れ、勝因をズバッと）
+高島として分析してください。出力フォーマットを厳守すること：
+
+まず各チャンネルの総評を、必ず次の形式で出す（チャンネル名は下記リストと完全一致させる）：
+@@チャンネル名@@
+（そのチャンネルの総評を2〜3行。速さ・投稿頻度・ショート比率に触れ、勝因をズバッと。初心者にも分かる言葉で）
+
+対象チャンネル名リスト：${names.join(' / ')}
+
+全チャンネルの総評を書いたら、最後に必ず：
+@@総括@@
 ■ ベストな投稿頻度（成功データから逆算。週◯本・ショート◯：ロング◯など具体的に）
-■ 今のYouTubeアルゴリズムが重視していること（3〜4個、具体的に）
-■ 今アツいトレンド・ネタの方向性（具体的に3つ）
+■ 今のYouTubeアルゴリズムが重視していること（3〜4個）
+■ 今アツいトレンド・ネタの方向性（3つ）
 ■ 動画の構成・脚本で重視すべきこと（3〜4個）
 ■ りくまこRadioが今日から実行すべきこと（3つ）
 ■ 高島の一言`;
-  return askClaude(TAKASHIMA, user, 2600);
+  const text = await askClaude(TAKASHIMA, user, 2800);
+  // @@名前@@ で分割して {perChannel, overall} に整形
+  const perChannel = {}; let overall = '';
+  const parts = text.split(/@@(.+?)@@/);
+  for (let i = 1; i < parts.length; i += 2) {
+    const key = (parts[i] || '').trim();
+    const body = (parts[i + 1] || '').trim();
+    if (key === '総括' || /overall/i.test(key)) overall = body;
+    else if (key) perChannel[key] = body;
+  }
+  return { perChannel, overall: overall || text };
 }
 
 // 設定に登録された（表示ON）大手チャンネルのベンチマークを取得。id未解決なら解決して保存
