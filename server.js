@@ -332,6 +332,7 @@ async function getEmergingChannels(months, limit = 6) {
           const dur = parseDuration(v.contentDetails?.duration);
           return {
             title: v.snippet.title, views: Number(v.statistics?.viewCount || 0),
+            publishedAt: v.snippet.publishedAt,
             thumb: v.snippet.thumbnails?.medium?.url || '', isShort: dur > 0 && dur <= SHORT_MAX,
             url: `https://www.youtube.com/watch?v=${v.id}`,
           };
@@ -339,8 +340,9 @@ async function getEmergingChannels(months, limit = 6) {
         const sh = arr.filter((v) => v.isShort).length;
         c.shortRatio = arr.length ? Math.round(sh / arr.length * 100) : 0;
         c.top = [...arr].sort((a, b) => b.views - a.views).slice(0, 3);
-      } else { c.top = []; c.shortRatio = 0; }
-    } catch { c.top = []; c.shortRatio = 0; }
+        c.recent = [...arr].sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt)).slice(0, 3);
+      } else { c.top = []; c.recent = []; c.shortRatio = 0; }
+    } catch { c.top = []; c.recent = []; c.shortRatio = 0; }
   }
   return list;
 }
@@ -491,6 +493,28 @@ async function buildDashboard() {
   }
 }
 
+// ── 成長履歴トラッキング（毎日1回、りくまこの実データを記録）──────────────────
+const HISTORY_FILE = path.join(DATA_DIR, 'history.json');
+async function snapshotHistory() {
+  try {
+    const ch = await yt('channels', { part: 'statistics', id: DEFAULT_CHANNEL });
+    const s = ch.items?.[0]?.statistics;
+    if (!s) return;
+    const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10); // JST日付
+    const hist = loadJSON(HISTORY_FILE, []);
+    const rec = { date: today, subs: Number(s.subscriberCount || 0), views: Number(s.viewCount || 0), videos: Number(s.videoCount || 0) };
+    const i = hist.findIndex((h) => h.date === today);
+    if (i >= 0) hist[i] = rec; else hist.push(rec);
+    if (hist.length > 400) hist.splice(0, hist.length - 400);
+    saveJSON(HISTORY_FILE, hist);
+    console.log(`[history] ${today} subs=${rec.subs} views=${rec.views}`);
+  } catch (e) { console.error('[history]', e.message); }
+}
+function scheduleHistory() {
+  snapshotHistory();
+  setInterval(snapshotHistory, 24 * 3600 * 1000);
+}
+
 const THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
 function scheduleAutoFetch() {
   const cache = loadJSON(CACHE_FILE, null);
@@ -604,6 +628,40 @@ const server = http.createServer(async (req, res) => {
       const channels = await getEmergingChannels(months, 10);
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ months, channels, fetchedAt: new Date().toISOString() }));
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  // 成長履歴（りくまこの実データ）
+  if (url.pathname === '/api/history') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify(loadJSON(HISTORY_FILE, [])));
+    return;
+  }
+
+  // タイトル/サムネ A/B 案ジェネレーター
+  if (url.pathname === '/api/ab' && req.method === 'POST') {
+    try {
+      const { idea } = JSON.parse((await readBody(req)) || '{}');
+      if (!idea) throw new Error('ネタ・テーマを入力してください');
+      const user = `動画のネタ・テーマ：「${idea}」
+
+高島として、この動画がクリックされ、伸びるためのタイトルとサムネの案を出してください。
+
+■ タイトル案（5つ）
+それぞれ、狙い（なぜクリックされるか）を一言添える。クリックされやすく具体的に、15〜28字目安。煽りすぎ・釣りすぎはNG。
+
+■ サムネのコンセプト案（3つ）
+それぞれ「大きく見せる要素・表情/構図・入れる文字（6〜9字）・色」を具体的に。
+
+■ A/Bテストのおすすめ
+まずどの2案で比較すべきか、高島の推し。`;
+      const text = await askClaude(TAKASHIMA, user, 1400);
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ text }));
     } catch (e) {
       res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ error: e.message }));
@@ -762,4 +820,5 @@ ${summary}
 server.listen(PORT, () => {
   console.log(`▶ YT Dashboard: http://localhost:${PORT}`);
   scheduleAutoFetch(); // 3日に1回の自動取得
+  scheduleHistory();   // 毎日1回の成長スナップショット
 });

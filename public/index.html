@@ -218,6 +218,15 @@
       <button class="btn pink" id="valueupBtn">プランを生成する</button>
       <div class="ai-out" id="valueupOut" style="margin-top:16px"></div>
     </div>
+    <div class="card" style="margin-top:14px">
+      <div class="panel-title">🏷️ タイトル / サムネ A/B案ジェネレーター</div>
+      <div class="hint">これから作る動画のネタ・テーマを入れると、クリックされやすいタイトル案とサムネのコンセプトを高島が複数出します。</div>
+      <div class="controls">
+        <input id="abInput" placeholder="例：睡眠の意外な雑学 / きさらぎ駅の真相" style="width:360px" />
+        <button class="btn" id="abBtn">案を出してもらう</button>
+      </div>
+      <div class="ai-out" id="abOut" style="margin-top:12px"></div>
+    </div>
   </div>
 
   <!-- AI高島 -->
@@ -286,6 +295,10 @@
 
   <!-- 成長予測 -->
   <div class="view" id="view-forecast">
+    <div class="card" id="historyCard" style="margin-bottom:14px">
+      <div class="panel-title">📈 実績の推移（毎日自動記録）</div>
+      <div id="historyBody"><div class="hint">登録者・再生数を毎日記録して、実データの成長曲線を描きます。記録が2日分たまると表示されます。</div></div>
+    </div>
     <div class="grid">
       <div class="card">
         <div class="panel-title">🔮 りくまこRadio 未来の登録者予測（24ヶ月）</div>
@@ -627,7 +640,9 @@ function renderEmerging(){
         <div>ショート比率<b style="color:var(--pink)">${c.shortRatio}%</b></div>
       </div>
       ${(c.milestones&&c.milestones.length)?`<div class="miles">${c.milestones.map(m=>`<div class="mile"><span class="mm">${fmt(m.m)}人</span><span>推定 ${m.months}ヶ月 / 約${fmt(m.videos)}本</span></div>`).join('')}</div>`:''}
+      <div class="st" style="margin:4px 0 4px">🔥 再生上位</div>
       <div class="vids">${(c.top||[]).map(v=>`<a href="${v.url}" target="_blank"><img src="${v.thumb}"/><div class="vv">${fmt(v.views)}回</div><div class="vt">${v.title}</div></a>`).join('')||'<div class="st">動画取得なし</div>'}</div>
+      ${(c.recent&&c.recent.length)?`<div class="st" style="margin:8px 0 4px">🆕 直近の投稿</div><div class="vids">${c.recent.map(v=>`<a href="${v.url}" target="_blank"><img src="${v.thumb}"/><div class="vv" style="color:var(--muted)">${fmt(v.views)}回</div><div class="vt">${v.title}</div></a>`).join('')}</div>`:''}
     </div>`).join('')+'</div>';
 }
 // ── 成長予測（りくまこRadio固定・データ自動反映）──────────────
@@ -680,13 +695,44 @@ function runForecast(){
 }
 document.getElementById('fcRun').onclick=runForecast;
 
+// ── 成長履歴チャート（実データ）──────────────────────────────
+async function loadHistory(){
+  const body=document.getElementById('historyBody');
+  try{
+    const r=await fetch('/api/history'); const h=await r.json();
+    if(!Array.isArray(h)||h.length<2){ body.innerHTML='<div class="hint">記録が2日分たまると、実データの成長曲線を表示します（毎日自動で記録中）。現在 '+(Array.isArray(h)?h.length:0)+'日分。</div>'; return; }
+    body.innerHTML='<canvas class="chart" id="histChart" style="height:220px!important"></canvas>';
+    const labels=h.map(x=>x.date.slice(5));
+    const g=document.getElementById('histChart').getContext('2d').createLinearGradient(0,0,0,220);
+    g.addColorStop(0,'rgba(34,224,214,.35)'); g.addColorStop(1,'rgba(34,224,214,0)');
+    if(charts.histChart)charts.histChart.destroy();
+    charts.histChart=new Chart(document.getElementById('histChart'),{type:'line',data:{labels,datasets:[
+      {label:'登録者数',data:h.map(x=>x.subs),borderColor:'#22e0d6',backgroundColor:g,fill:true,tension:.3,pointRadius:2,yAxisID:'y'},
+      {label:'総再生数',data:h.map(x=>x.views),borderColor:'#ff3d81',backgroundColor:'transparent',tension:.3,pointRadius:0,yAxisID:'y1'}
+    ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#eaf0fb',font:{size:11}}},tooltip:{callbacks:{label:i=>i.dataset.label+': '+fmt(i.raw)}}},scales:{
+      x:{grid:{color:'#141c2a'},ticks:{color:'#7d8aa3',maxTicksLimit:10,font:{size:10}}},
+      y:{position:'left',grid:{color:'#141c2a'},ticks:{color:'#22e0d6',callback:v=>fmt(v),font:{size:10}}},
+      y1:{position:'right',grid:{display:false},ticks:{color:'#ff3d81',callback:v=>fmt(v),font:{size:10}}}}}});
+  }catch(e){ body.innerHTML='<div class="err">⚠️ '+e.message+'</div>'; }
+}
+// タイトル/サムネ A/B案
+document.getElementById('abBtn').onclick=async()=>{
+  const idea=document.getElementById('abInput').value.trim(); const out=document.getElementById('abOut'); const btn=document.getElementById('abBtn');
+  if(!idea){out.innerHTML='<div class="hint">ネタ・テーマを入力してください。</div>';return;}
+  btn.disabled=true; const old=btn.textContent; btn.innerHTML='<span class="spin"></span> 高島が考え中…'; out.textContent='';
+  try{ const r=await fetch('/api/ab',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({idea})}); const d=await r.json(); if(d.error)throw new Error(d.error); out.innerHTML=mdLite(d.text); }
+  catch(e){ out.innerHTML='<div class="err">⚠️ '+e.message+'</div>'; }
+  finally{ btn.disabled=false; btn.textContent=old; }
+};
+document.getElementById('abInput').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('abBtn').click();});
+
 // タブ切り替え
 document.getElementById('tabs').addEventListener('click',e=>{
   const b=e.target.closest('button'); if(!b)return;
   document.querySelectorAll('#tabs button').forEach(x=>x.classList.remove('on')); b.classList.add('on');
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
   document.getElementById('view-'+b.dataset.tab).classList.add('on');
-  if(b.dataset.tab==='forecast'){ prefillForecast().then(runForecast); }
+  if(b.dataset.tab==='forecast'){ prefillForecast().then(runForecast); loadHistory(); }
   if(b.dataset.tab==='benchmark'||b.dataset.tab==='emerging'){ ensureDashboard(); }
 });
 document.getElementById('loadBtn').onclick=load;
