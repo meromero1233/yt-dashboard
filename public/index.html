@@ -99,6 +99,19 @@
   .spin{display:inline-block;width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--cyan);border-radius:50%;animation:sp 1s linear infinite;vertical-align:middle}
   @keyframes sp{to{transform:rotate(360deg)}}
   .hint{font-size:12px;color:var(--muted);margin-bottom:12px}
+  .btn.ghost{background:var(--panel2);color:var(--text);border:1px solid var(--line)}
+  .updated-tag{font-size:11px;color:var(--muted);font-weight:600;margin-left:8px}
+  .manage{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+  .chip{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:5px 6px 5px 12px;font-size:12px}
+  .chip.off{opacity:.45}
+  .chip .cname{font-weight:700}
+  .chip .tg{cursor:pointer;width:34px;height:18px;border-radius:20px;background:var(--line);position:relative;flex:none}
+  .chip.on .tg{background:var(--cyan)}
+  .chip .tg::after{content:'';position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:.2s}
+  .chip.on .tg::after{left:18px}
+  .chip .rm{cursor:pointer;color:var(--muted);font-weight:800;padding:0 4px}
+  .chip .rm:hover{color:var(--pink)}
+  .building{text-align:center;padding:30px;color:var(--muted)}
   .bmgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:14px}
   .bmc{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:16px;padding:16px}
   .bmc .head{display:flex;align-items:center;gap:12px;margin-bottom:12px}
@@ -232,17 +245,14 @@
   <!-- ベンチマーク -->
   <div class="view" id="view-benchmark">
     <div class="card" style="margin-bottom:14px">
-      <div class="panel-title">🎯 同ジャンル大手ベンチマーク</div>
-      <div class="hint">都市伝説・雑学・未解決系の大手が、選んだ期間内にどんな動画で伸びているかを分析します。</div>
+      <div class="panel-title">🎯 同ジャンル大手ベンチマーク <span id="bmUpdated" class="updated-tag"></span></div>
+      <div class="hint">大手はデフォルト表示。チャンネルを検索して追加、表示ON/OFFや削除もできます。データは3日に1回自動更新されます。</div>
       <div class="controls">
-        <div class="segs" id="bmWin">
-          <button data-days="30">1ヶ月</button>
-          <button data-days="90" class="on">3ヶ月</button>
-          <button data-days="180">半年</button>
-          <button data-days="365">1年</button>
-        </div>
-        <button class="btn" id="bmLoadBtn">取得・分析</button>
+        <input id="bmAddInput" placeholder="追加するチャンネルID / @ハンドル / 名前" />
+        <button class="btn" id="bmAddBtn">＋追加</button>
+        <button class="btn ghost" id="bmRefreshBtn">🔄 今すぐ更新</button>
       </div>
+      <div id="bmManage" class="manage"></div>
     </div>
     <div id="bmChannels"></div>
     <div class="card" id="bmTraitsCard" style="display:none;margin-bottom:14px">
@@ -251,36 +261,27 @@
     </div>
     <div class="card">
       <div class="panel-title">🧠 高島の戦略分析 → りくまこRadioへのアジャスト</div>
-      <div class="hint">上のデータ＋Web/Xの情報から、なぜ伸びているか・りくまこがどう取り入れるかを高島が考察します。</div>
-      <button class="btn pink" id="bmAiBtn">戦略を分析してもらう</button>
-      <div class="ai-out" id="bmAiOut" style="margin-top:16px"></div>
+      <div class="hint">3日に1回、高島が自動で分析します。すぐ更新したいときは上の「今すぐ更新」を。</div>
+      <div class="ai-out" id="bmAiOut" style="margin-top:8px"></div>
     </div>
   </div>
 
   <!-- 新興ch分析 -->
   <div class="view" id="view-emerging">
     <div class="card" style="margin-bottom:14px">
-      <div class="panel-title">🌱 新興チャンネル分析（最近開設なのに伸びてる）</div>
-      <div class="hint">同ジャンルで「開設して間もないのに急成長している」チャンネルを発見し、ゼロから伸ばす"初速の秘訣"を高島が抽出します。りくまこRadioと同じスタート地点の成功例です。</div>
-      <div class="controls">
-        <div class="segs" id="emWin">
-          <button data-months="3">開設3ヶ月以内</button>
-          <button data-months="6" class="on">開設6ヶ月以内</button>
-        </div>
-        <button class="btn" id="emLoadBtn">発見・分析</button>
-      </div>
+      <div class="panel-title">🌱 新興チャンネル分析（最近開設なのに伸びてる） <span id="emUpdated" class="updated-tag"></span></div>
+      <div class="hint">開設6ヶ月以内で急成長中のチャンネルを約10件、自動でピックアップ。3日に1回更新され、高島が自動でフィードバックします。</div>
+      <button class="btn ghost" id="emRefreshBtn">🔄 今すぐ更新</button>
     </div>
     <div class="card" id="timingCard" style="display:none;margin-bottom:14px">
       <div class="panel-title">🕒 最適な投稿タイミング（同ジャンル人気動画から算出）</div>
       <div id="timingBody"></div>
     </div>
-    <div id="emChannels"></div>
-    <div class="card">
+    <div class="card" style="margin-bottom:14px">
       <div class="panel-title">🧠 高島の総評＆秘訣抽出 → りくまこRadioへ</div>
-      <div class="hint">各チャンネルの総評と、ゼロから伸ばす秘訣、りくまこが今日から真似すべきことを高島がまとめます。</div>
-      <button class="btn pink" id="emAiBtn">秘訣を抽出してもらう</button>
-      <div class="ai-out" id="emAiOut" style="margin-top:16px"></div>
+      <div class="ai-out" id="emAiOut" style="margin-top:8px"></div>
     </div>
+    <div id="emChannels"></div>
   </div>
 
   <!-- 成長予測 -->
@@ -469,20 +470,76 @@ async function doCompare(){
   }catch(e){ out.innerHTML='<div class="err">⚠️ '+e.message+'</div>'; }
 }
 
-// ── ベンチマーク ──────────────────────────────────────────────
-let BM=null, bmDays=90;
-async function loadBenchmark(){
-  const out=document.getElementById('bmChannels');
-  out.innerHTML='<div class="card"><span class="spin"></span> 大手チャンネルを分析中…（30秒ほどかかります）</div>';
-  document.getElementById('bmTraitsCard').style.display='none';
+// ── 自動取得ダッシュボード（ベンチマーク＋新興。サーバーが3日に1回更新）──────
+let DASH=null, dashInit=false;
+function fmtUpdated(iso){ if(!iso)return''; const d=new Date(iso); return '最終自動更新 '+d.toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}); }
+async function ensureDashboard(force){
+  loadManage();
+  if(DASH && !force){ return; }
+  if(!DASH){
+    document.getElementById('bmChannels').innerHTML='<div class="card building"><span class="spin"></span> 自動取得データを読み込み中…</div>';
+    document.getElementById('emChannels').innerHTML='<div class="card building"><span class="spin"></span> 自動取得データを読み込み中…</div>';
+  }
   try{
-    const r=await fetch('/api/benchmark?days='+bmDays);
-    const d=await r.json(); if(d.error)throw new Error(d.error);
-    BM=d; renderBenchmark();
-  }catch(e){ out.innerHTML='<div class="err">⚠️ '+e.message+'</div>'; }
+    const r=await fetch('/api/dashboard'); const d=await r.json();
+    if(!d.benchmark){ // まだ一度も生成されていない
+      const m='<div class="card building"><span class="spin"></span> 初回の自動取得を実行中です…（数分かかります。完了後は自動で表示されます）</div>';
+      document.getElementById('bmChannels').innerHTML=m; document.getElementById('emChannels').innerHTML=m;
+      setTimeout(()=>ensureDashboard(true),20000); return;
+    }
+    DASH=d; renderDash();
+    if(d.building){ setTimeout(()=>ensureDashboard(true),30000); } // 更新中は少し後に反映
+  }catch(e){ document.getElementById('bmChannels').innerHTML='<div class="err">⚠️ '+e.message+'</div>'; }
 }
-function renderBenchmark(){
-  const winLabel={30:'1ヶ月',90:'3ヶ月',180:'半年',365:'1年'}[bmDays];
+function renderDash(){
+  document.getElementById('bmUpdated').textContent=fmtUpdated(DASH.updatedAt)+(DASH.building?'（更新中…）':'');
+  document.getElementById('emUpdated').textContent=fmtUpdated(DASH.updatedAt);
+  renderBenchmark(DASH.benchmark.channels);
+  document.getElementById('bmAiOut').innerHTML=DASH.benchmarkAdvice?mdLite(DASH.benchmarkAdvice):'<div class="hint">分析はまだありません。「今すぐ更新」で生成できます。</div>';
+  EM={channels:DASH.emerging.channels}; renderEmerging();
+  document.getElementById('emAiOut').innerHTML=DASH.emergingAdvice?mdLite(DASH.emergingAdvice):'<div class="hint">分析はまだありません。「今すぐ更新」で生成できます。</div>';
+  loadTiming();
+  loadManage();
+}
+async function refreshDash(btn){
+  const old=btn.textContent; btn.disabled=true; btn.innerHTML='<span class="spin"></span> 更新を開始…';
+  try{ await fetch('/api/refresh',{method:'POST'}); }catch{}
+  btn.textContent='更新中（数分後に反映）';
+  setTimeout(()=>{ btn.disabled=false; btn.textContent=old; ensureDashboard(true); }, 90000);
+}
+// 管理チャンネル（大手）の追加・表示切替・削除
+async function loadManage(){
+  try{
+    const r=await fetch('/api/channels'); const cfg=await r.json();
+    document.getElementById('bmManage').innerHTML=cfg.channels.map(c=>{
+      const key=c.id||c.query;
+      return `<div class="chip ${c.enabled?'on':'off'}"><span class="tg" data-toggle="${key}"></span><span class="cname">${c.name}</span><span class="rm" data-remove="${key}">×</span></div>`;
+    }).join('');
+  }catch{}
+}
+async function manageChannel(body){
+  const r=await fetch('/api/channels',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+  const d=await r.json(); if(d.error){alert(d.error);return;} loadManage();
+}
+document.getElementById('bmManage').addEventListener('click',e=>{
+  const t=e.target.closest('[data-toggle]'), rm=e.target.closest('[data-remove]');
+  if(t)manageChannel({action:'toggle',id:t.dataset.toggle});
+  if(rm && confirm('このチャンネルを削除しますか？'))manageChannel({action:'remove',id:rm.dataset.remove});
+});
+document.getElementById('bmAddBtn').onclick=async()=>{
+  const q=document.getElementById('bmAddInput').value.trim(); if(!q)return;
+  const btn=document.getElementById('bmAddBtn'); btn.disabled=true; btn.textContent='追加中…';
+  await manageChannel({action:'add',query:q}); document.getElementById('bmAddInput').value='';
+  btn.disabled=false; btn.textContent='＋追加';
+};
+document.getElementById('bmAddInput').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('bmAddBtn').click();});
+document.getElementById('bmRefreshBtn').onclick=e=>refreshDash(e.target);
+document.getElementById('emRefreshBtn').onclick=e=>refreshDash(e.target);
+
+// ── ベンチマーク描画 ──────────────────────────────────────────
+let BM=null;
+function renderBenchmark(channels){
+  BM={channels};
   document.getElementById('bmChannels').innerHTML='<div class="bmgrid">'+BM.channels.map((c,i)=>`
     <div class="bmc">
       <div class="head"><img src="${c.thumb}"/><div><div class="nm">${c.name}</div>
@@ -513,34 +570,8 @@ function renderBenchmark(){
       <div class="insight">📆 各チャンネルの直近投稿数は平均 <b>${topCadence}本</b>。この投稿頻度が伸びの前提になっています。</div>`;
   }
 }
-async function benchmarkAI(){
-  const out=document.getElementById('bmAiOut'); const btn=document.getElementById('bmAiBtn');
-  if(!BM){out.textContent='先に「取得・分析」でデータを読み込んでください。';return;}
-  btn.disabled=true; const old=btn.textContent; btn.innerHTML='<span class="spin"></span> 高島が分析中…（Web検索込みで20秒ほど）';
-  const summary=BM.channels.map(c=>`■${c.name}（登録${fmt(c.subscribers)}）直近平均${fmt(c.recentAvgViews)}回・${c.recentCount}本・short${c.shortRatio}%\n  代表作: `+c.top.slice(0,3).map(v=>`「${v.title}」${fmt(v.views)}回`).join(' / ')).join('\n');
-  try{
-    const r=await fetch('/api/benchmark-ai',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({summary,channelNames:BM.channels.map(c=>c.name)})});
-    const d=await r.json(); if(d.error)throw new Error(d.error);
-    out.innerHTML=mdLite(d.text);
-  }catch(e){ out.innerHTML='<div class="err">⚠️ '+e.message+'</div>'; }
-  finally{ btn.disabled=false; btn.textContent=old; }
-}
-document.getElementById('bmWin').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;document.querySelectorAll('#bmWin button').forEach(x=>x.classList.remove('on'));b.classList.add('on');bmDays=Number(b.dataset.days);});
-document.getElementById('bmLoadBtn').onclick=loadBenchmark;
-document.getElementById('bmAiBtn').onclick=benchmarkAI;
-
-// ── 新興チャンネル分析 ──────────────────────────────────────
-let EM=null, emMonths=6;
-async function loadEmerging(){
-  const out=document.getElementById('emChannels');
-  out.innerHTML='<div class="card"><span class="spin"></span> 新興チャンネルを探索中…（30〜40秒かかります）</div>';
-  loadTiming(); // 投稿タイミングも並行取得
-  try{
-    const r=await fetch('/api/emerging?months='+emMonths);
-    const d=await r.json(); if(d.error)throw new Error(d.error);
-    EM=d; renderEmerging();
-  }catch(e){ out.innerHTML='<div class="err">⚠️ '+e.message+'</div>'; }
-}
+// ── 新興チャンネル分析（キャッシュから描画）──────────────────
+let EM=null;
 
 const DOWJP=['日','月','火','水','木','金','土'];
 async function loadTiming(){
@@ -578,8 +609,7 @@ async function loadTiming(){
   }catch(e){ body.innerHTML='<div class="err">⚠️ '+e.message+'</div>'; }
 }
 function renderEmerging(){
-  const win={3:'3ヶ月',6:'6ヶ月',12:'1年'}[emMonths];
-  if(!EM.channels.length){ document.getElementById('emChannels').innerHTML='<div class="card"><div class="hint">開設'+win+'以内の急成長チャンネルが見つかりませんでした。期間を広げてみてください。</div></div>'; return; }
+  if(!EM.channels.length){ document.getElementById('emChannels').innerHTML='<div class="card"><div class="hint">急成長中の新興チャンネルが見つかりませんでした。「今すぐ更新」で再取得してみてください。</div></div>'; return; }
   document.getElementById('emChannels').innerHTML='<div class="bmgrid">'+EM.channels.map((c,i)=>`
     <div class="bmc">
       <div class="head"><img src="${c.thumb}"/><div><div class="nm">${c.name}</div>
@@ -595,22 +625,6 @@ function renderEmerging(){
       <div class="vids">${(c.top||[]).map(v=>`<a href="${v.url}" target="_blank"><img src="${v.thumb}"/><div class="vv">${fmt(v.views)}回</div><div class="vt">${v.title}</div></a>`).join('')||'<div class="st">動画取得なし</div>'}</div>
     </div>`).join('')+'</div>';
 }
-async function emergingAI(){
-  const out=document.getElementById('emAiOut'); const btn=document.getElementById('emAiBtn');
-  if(!EM||!EM.channels.length){out.textContent='先に「発見・分析」で新興チャンネルを読み込んでください。';return;}
-  btn.disabled=true; const old=btn.textContent; btn.innerHTML='<span class="spin"></span> 高島が分析中…';
-  const summary=EM.channels.map(c=>`■${c.name}：開設${Math.round(c.ageMonths)}ヶ月・登録${fmt(c.subs)}（月+${fmt(c.velocity)}ペース）・総動画${c.totalVideos}本・投稿頻度週${c.freqPerWeek}本・ショート比率${c.shortRatio}%\n  マイルストーン: `+((c.milestones||[]).map(m=>`${fmt(m.m)}人=推定${m.months}ヶ月/約${fmt(m.videos)}本`).join(' , ')||'なし')+`\n  代表作: `+(c.top||[]).map(v=>`「${v.title}」${fmt(v.views)}回(${v.isShort?'short':'long'})`).join(' / ')).join('\n');
-  try{
-    const r=await fetch('/api/emerging-ai',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({summary})});
-    const d=await r.json(); if(d.error)throw new Error(d.error);
-    out.innerHTML=mdLite(d.text);
-  }catch(e){ out.innerHTML='<div class="err">⚠️ '+e.message+'</div>'; }
-  finally{ btn.disabled=false; btn.textContent=old; }
-}
-document.getElementById('emWin').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;document.querySelectorAll('#emWin button').forEach(x=>x.classList.remove('on'));b.classList.add('on');emMonths=Number(b.dataset.months);});
-document.getElementById('emLoadBtn').onclick=loadEmerging;
-document.getElementById('emAiBtn').onclick=emergingAI;
-
 // ── 成長予測（りくまこRadio固定・データ自動反映）──────────────
 let RIKUMAKO=null;
 async function prefillForecast(){
@@ -668,6 +682,7 @@ document.getElementById('tabs').addEventListener('click',e=>{
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
   document.getElementById('view-'+b.dataset.tab).classList.add('on');
   if(b.dataset.tab==='forecast'){ prefillForecast().then(runForecast); }
+  if(b.dataset.tab==='benchmark'||b.dataset.tab==='emerging'){ ensureDashboard(); }
 });
 document.getElementById('loadBtn').onclick=load;
 document.getElementById('channelInput').addEventListener('keydown',e=>{if(e.key==='Enter')load();});

@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import http from 'node:http';
+import fs from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,15 +10,31 @@ const KEY = process.env.YOUTUBE_API_KEY?.trim();
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY?.trim();
 const TAVILY_KEY = process.env.TAVILY_API_KEY?.trim();
 
-// ベンチマーク対象（同ジャンル大手）。名前＋検索クエリで解決する
-const BENCHMARKS = [
-  { name: 'たっくーTVれいでぃお', query: 'たっくーTVれいでぃお' },
-  { name: 'コヤッキースタジオ', query: 'コヤッキースタジオ' },
-  { name: 'ナオキマンショー', query: '@naokimanshow-naokiman' },
-  { name: 'とみビデオ', query: 'とみビデオ 都市伝説' },
-  { name: '雨穴', query: '雨穴' },
-  { name: '都市ボーイズ', query: '都市ボーイズ' },
+// ── 永続ストレージ（Railway Volume / ローカル ./data）──────────────────────────
+const DATA_DIR = process.env.DATA_DIR?.trim() || './data';
+const CFG_FILE = path.join(DATA_DIR, 'config.json');
+const CACHE_FILE = path.join(DATA_DIR, 'cache.json');
+function loadJSON(f, def) { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return def; } }
+function saveJSON(f, o) { try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(f, JSON.stringify(o, null, 2)); } catch (e) { console.error('[store] save失敗:', e.message); } }
+
+// ベンチマーク対象（同ジャンル大手）のデフォルト。ユーザーが追加・削除・表示切替できる
+const DEFAULT_BENCHMARKS = [
+  { id: null, name: 'たっくーTVれいでぃお', query: 'たっくーTVれいでぃお', enabled: true, kind: 'default' },
+  { id: null, name: 'コヤッキースタジオ', query: 'コヤッキースタジオ', enabled: true, kind: 'default' },
+  { id: null, name: 'ナオキマンショー', query: '@naokimanshow-naokiman', enabled: true, kind: 'default' },
+  { id: null, name: 'とみビデオ', query: 'とみビデオ 都市伝説', enabled: true, kind: 'default' },
+  { id: null, name: '雨穴', query: '雨穴', enabled: true, kind: 'default' },
+  { id: null, name: '都市ボーイズ', query: '都市ボーイズ', enabled: true, kind: 'default' },
 ];
+
+function getConfig() {
+  const c = loadJSON(CFG_FILE, null);
+  if (c && Array.isArray(c.channels)) return c;
+  const seed = { channels: DEFAULT_BENCHMARKS.map((x) => ({ ...x })) };
+  saveJSON(CFG_FILE, seed);
+  return seed;
+}
+function saveConfig(c) { saveJSON(CFG_FILE, c); }
 
 // Tavily Web/X 検索
 async function webSearch(query, max = 5) {
@@ -146,6 +163,7 @@ async function getChannelBenchmark(query, sinceDays) {
   const longVids = videos.filter((v) => !v.isShort);
   const avg = (arr) => arr.length ? Math.round(arr.reduce((a, v) => a + v.views, 0) / arr.length) : 0;
   return {
+    channelId,
     name: c.snippet.title,
     thumb: c.snippet.thumbnails?.default?.url || '',
     subscribers: Number(c.statistics?.subscriberCount || 0),
@@ -248,11 +266,12 @@ async function getAnalytics(channelInput, maxVideos = 50) {
 }
 
 // 新興チャンネル発見：同ジャンルで「開設◯ヶ月以内」なのに伸びているチャンネル
-async function getEmergingChannels(months) {
+async function getEmergingChannels(months, limit = 6) {
   const since = Date.now() - months * 30 * 86400000;
   const queries = [
     '都市伝説', '雑学 豆知識', '未解決事件', '怖い話',
     '闇 ゆっくり解説', '都市伝説 shorts', '雑学 shorts', 'ゾッとする話', '人怖',
+    '心霊', 'オカルト', '世界の謎', 'ミステリー 解説', '怖い雑学',
   ];
   const chIds = new Set();
   for (const q of queries) {
@@ -288,7 +307,7 @@ async function getEmergingChannels(months) {
     c.velocity = Math.round(c.subs / c.ageMonths); // 月あたり登録者増ペース
   });
   list.sort((a, b) => b.velocity - a.velocity);
-  list = list.slice(0, 6);
+  list = list.slice(0, limit);
 
   // 各チャンネルの動画を取得し、投稿頻度・ショート比率・マイルストーン推定を計算
   const MILES = [10000, 30000, 50000, 100000];
@@ -365,6 +384,118 @@ async function getBestTiming() {
   return { dow, hour, bestDow, bestHour, slots, sample: allIds.length };
 }
 
+// ── AI分析（再利用）──────────────────────────────────────────────────────────
+function summarizeBenchmark(channels) {
+  return channels.map((c) => `■${c.name}（登録${c.subscribers}）直近平均${c.recentAvgViews}回・${c.recentCount}本・short${c.shortRatio}%\n  代表作: `
+    + (c.top || []).slice(0, 3).map((v) => `「${v.title}」${v.views}回`).join(' / ')).join('\n');
+}
+function summarizeEmerging(channels) {
+  return channels.map((c) => `■${c.name}：開設${Math.round(c.ageMonths)}ヶ月・登録${c.subscribers}（月+${c.velocity}）・総動画${c.totalVideos}本・週${c.freqPerWeek}本・short${c.shortRatio}%\n  マイルストーン: `
+    + ((c.milestones || []).map((m) => `${m.m}人=推定${m.months}ヶ月/約${m.videos}本`).join(' , ') || 'なし')
+    + `\n  代表作: ` + (c.top || []).map((v) => `「${v.title}」${v.views}回(${v.isShort ? 'short' : 'long'})`).join(' / ')).join('\n');
+}
+
+async function aiBenchmark(channels) {
+  const names = channels.map((c) => c.name);
+  let web = '';
+  for (const q of [
+    `${names.slice(0, 3).join(' ')} YouTube 伸びている 理由 戦略`,
+    '都市伝説 雑学 YouTube チャンネル 2026 伸びている 共通点',
+  ]) { const { answer, results } = await webSearch(q, 4); if (answer || results) web += `▼「${q}」\n${answer}\n${results}\n\n`; }
+  const user = `以下は、りくまこRadio（都市伝説・雑学・未解決事件ジャンル）の同ジャンル大手チャンネルの直近データとWeb情報です。
+
+【同ジャンル大手の直近データ】
+${summarizeBenchmark(channels)}
+
+【Web情報】
+${web || '（一般知見で補ってください）'}
+
+高島として：
+■ 各チャンネルが伸びている要因（1chにつき1〜2行）
+■ 伸びているチャンネルの共通点（3〜5個、具体的に）
+■ りくまこRadioへのアジャスト案（今すぐ真似る3つ＋中期2つ。登録者ゼロ前提で現実的に）
+■ 高島の結論（勝ち筋を一言）`;
+  return askClaude(TAKASHIMA, user, 2200);
+}
+
+async function aiEmerging(channels) {
+  let web = '';
+  for (const q of ['YouTube アルゴリズム 2026 重視 指標 伸ばし方', '都市伝説 雑学 YouTube 今 バズってる トレンド ネタ 2026']) {
+    const { answer, results } = await webSearch(q, 4); if (answer || results) web += `▼「${q}」\n${answer}\n${results}\n\n`;
+  }
+  const user = `以下は、都市伝説・雑学・未解決系ジャンルで「開設6ヶ月以内なのに急成長している新興YouTubeチャンネル」の実データ（投稿頻度・ショート比率・マイルストーン推定つき）です。りくまこRadioも開設したばかりのゼロスタート。この新興から学べる"初速の勝ちパターン"を知りたい。
+
+【新興チャンネルの実データ】
+${summarizeEmerging(channels)}
+
+【Web情報（アルゴリズム・トレンド）】
+${web || '（一般知見で補ってください）'}
+
+高島として、分かりやすく：
+■ 各チャンネルの総評（1chにつき2〜3行。速さ・投稿頻度・ショート比率に触れ、勝因をズバッと）
+■ ベストな投稿頻度（成功データから逆算。週◯本・ショート◯：ロング◯など具体的に）
+■ 今のYouTubeアルゴリズムが重視していること（3〜4個、具体的に）
+■ 今アツいトレンド・ネタの方向性（具体的に3つ）
+■ 動画の構成・脚本で重視すべきこと（3〜4個）
+■ りくまこRadioが今日から実行すべきこと（3つ）
+■ 高島の一言`;
+  return askClaude(TAKASHIMA, user, 2600);
+}
+
+// 設定に登録された（表示ON）大手チャンネルのベンチマークを取得。id未解決なら解決して保存
+async function fetchManagedBenchmark(days = 90) {
+  const cfg = getConfig();
+  const enabled = cfg.channels.filter((c) => c.enabled);
+  const out = [];
+  let dirty = false;
+  for (const c of enabled) {
+    try {
+      const data = await getChannelBenchmark(c.id || c.query, days);
+      if (!c.id && data.channelId) { c.id = data.channelId; dirty = true; }
+      out.push({ label: c.name, ...data });
+    } catch (e) { console.warn('[benchmark]', c.name, e.message); }
+  }
+  if (dirty) saveConfig(cfg);
+  out.sort((a, b) => b.recentAvgViews - a.recentAvgViews);
+  return out;
+}
+
+// ── 3日に1回の自動取得（ダッシュボード全体を作ってキャッシュ）────────────────
+let building = false;
+async function buildDashboard() {
+  if (building) return;
+  building = true;
+  console.log('[auto] ダッシュボード自動取得を開始…');
+  try {
+    const benchmark = await fetchManagedBenchmark(90);
+    const emerging = await getEmergingChannels(6, 10);
+    let benchmarkAdvice = '', emergingAdvice = '';
+    try { benchmarkAdvice = await aiBenchmark(benchmark); } catch (e) { console.error('[auto] benchmark AI:', e.message); }
+    try { emergingAdvice = await aiEmerging(emerging); } catch (e) { console.error('[auto] emerging AI:', e.message); }
+    const cache = { updatedAt: new Date().toISOString(), benchmark: { days: 90, channels: benchmark }, emerging: { channels: emerging }, benchmarkAdvice, emergingAdvice };
+    saveJSON(CACHE_FILE, cache);
+    console.log(`[auto] 完了：大手${benchmark.length}件・新興${emerging.length}件`);
+    return cache;
+  } catch (e) {
+    console.error('[auto] 失敗:', e.message);
+  } finally {
+    building = false;
+  }
+}
+
+const THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
+function scheduleAutoFetch() {
+  const cache = loadJSON(CACHE_FILE, null);
+  const age = cache ? Date.now() - new Date(cache.updatedAt).getTime() : Infinity;
+  if (age > THREE_DAYS) {
+    console.log('[auto] キャッシュが古い/無いため取得します');
+    setTimeout(() => buildDashboard(), 5000);
+  } else {
+    console.log(`[auto] キャッシュ有効（${Math.round(age / 3600000)}時間前）`);
+  }
+  setInterval(() => buildDashboard(), THREE_DAYS);
+}
+
 // ── HTTP サーバー ─────────────────────────────────────────────────────────────
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css' };
 
@@ -392,19 +523,62 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // ベンチマーク（同ジャンル大手の直近分析）
+  // ダッシュボード（自動取得のキャッシュを返す。無ければ生成を開始）
+  if (url.pathname === '/api/dashboard') {
+    const cache = loadJSON(CACHE_FILE, null);
+    if (!cache && !building) buildDashboard();
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify(cache ? { ...cache, building } : { building: true }));
+    return;
+  }
+
+  // 手動で自動取得を再実行
+  if (url.pathname === '/api/refresh' && req.method === 'POST') {
+    if (!building) buildDashboard();
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ started: true, building: true }));
+    return;
+  }
+
+  // 管理チャンネル一覧の取得・変更（add/remove/toggle）
+  if (url.pathname === '/api/channels') {
+    if (req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify(getConfig()));
+      return;
+    }
+    if (req.method === 'POST') {
+      try {
+        const { action, query, id } = JSON.parse((await readBody(req)) || '{}');
+        const cfg = getConfig();
+        if (action === 'add') {
+          const chId = await resolveChannel(query);
+          if (cfg.channels.some((c) => c.id === chId)) throw new Error('すでに追加済みです');
+          const info = await yt('channels', { part: 'snippet', id: chId });
+          const name = info.items?.[0]?.snippet?.title || query;
+          cfg.channels.push({ id: chId, name, query: chId, enabled: true, kind: 'custom' });
+        } else if (action === 'remove') {
+          cfg.channels = cfg.channels.filter((c) => (c.id || c.query) !== id);
+        } else if (action === 'toggle') {
+          const c = cfg.channels.find((x) => (x.id || x.query) === id);
+          if (c) c.enabled = !c.enabled;
+        }
+        saveConfig(cfg);
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify(cfg));
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+      return;
+    }
+  }
+
+  // ベンチマーク（管理チャンネルの直近分析・オンデマンド）
   if (url.pathname === '/api/benchmark') {
     try {
       const days = Number(url.searchParams.get('days') || 90);
-      const channels = [];
-      for (const b of BENCHMARKS) {
-        try {
-          channels.push({ label: b.name, ...(await getChannelBenchmark(b.query, days)) });
-        } catch (e) {
-          console.warn('[benchmark]', b.name, e.message);
-        }
-      }
-      channels.sort((a, b) => b.recentAvgViews - a.recentAvgViews);
+      const channels = await fetchManagedBenchmark(days);
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ days, channels, fetchedAt: new Date().toISOString() }));
     } catch (e) {
@@ -417,8 +591,8 @@ const server = http.createServer(async (req, res) => {
   // 新興チャンネル発見
   if (url.pathname === '/api/emerging') {
     try {
-      const months = Number(url.searchParams.get('months') || 3);
-      const channels = await getEmergingChannels(months);
+      const months = Number(url.searchParams.get('months') || 6);
+      const channels = await getEmergingChannels(months, 10);
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ months, channels, fetchedAt: new Date().toISOString() }));
     } catch (e) {
@@ -576,4 +750,7 @@ ${summary}
   }
 });
 
-server.listen(PORT, () => console.log(`▶ YT Dashboard: http://localhost:${PORT}`));
+server.listen(PORT, () => {
+  console.log(`▶ YT Dashboard: http://localhost:${PORT}`);
+  scheduleAutoFetch(); // 3日に1回の自動取得
+});
