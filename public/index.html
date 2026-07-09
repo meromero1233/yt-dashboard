@@ -191,10 +191,9 @@
       </div>
       <div class="card goal">
         <div class="panel-title">🎯 目標達成度</div>
-        <div class="big" id="goalRemain">—</div>
-        <div class="bar"><span id="goalBar" style="width:0%"></span></div>
-        <div class="row"><span id="goalNow"></span><span class="pct" id="goalPct"></span></div>
-        <div style="margin-top:22px" class="panel-title">🆕 最新動画</div>
+        <div id="goalNext"></div>
+        <div id="goalFinal" style="margin-top:16px"></div>
+        <div style="margin-top:20px" class="panel-title">🆕 最新動画</div>
         <div class="latest" id="latest"></div>
       </div>
     </div>
@@ -301,19 +300,14 @@
     </div>
     <div class="grid">
       <div class="card">
-        <div class="panel-title">🔮 りくまこRadio 未来の登録者予測（24ヶ月）</div>
+        <div class="panel-title">🔮 未来の登録者予測（チャンネルデータから自動算出・24ヶ月）</div>
         <canvas class="chart" id="fcChart"></canvas>
         <div id="fcSummary" style="margin-top:14px"></div>
       </div>
       <div class="card">
-        <div class="panel-title">⚙️ 予測の前提（数字は変更できます）</div>
-        <div class="fcin"><label>現在の登録者数</label><input id="fcSubs" type="number"/></div>
-        <div class="fcin"><label>月間の投稿本数</label><input id="fcPosts" type="number"/></div>
-        <div class="fcin"><label>1本あたり平均再生数</label><input id="fcViews" type="number"/></div>
-        <div class="fcin"><label>視聴→登録の転換率 (%)</label><input id="fcConv" type="number" step="0.1"/></div>
-        <div class="fcin"><label>目標登録者数</label><input id="fcGoal" type="number"/></div>
-        <button class="btn" id="fcRun" style="width:100%;margin-top:10px">この前提で予測する</button>
-        <div class="hint" style="margin-top:12px">※ これは前提に基づく仮の試算です。実際の伸びは内容の質・アルゴリズム・バズで大きく変動します。「今のペースを続けるとどうなるか」の目安としてご覧ください。</div>
+        <div class="panel-title">📊 予測の根拠（現状のチャンネルデータ）</div>
+        <div id="fcBasis"></div>
+        <div class="hint" style="margin-top:12px">※ 実際の投稿数・再生数・登録者数から自動で算出しています。内容の質・アルゴリズム・バズで大きく上下します。「今のペースを続けるとどうなるか」の目安です。</div>
       </div>
     </div>
   </div>
@@ -325,6 +319,8 @@
 const fmt = n => { n=Number(n)||0; if(n>=1e8)return(n/1e8).toFixed(2)+'億'; if(n>=1e4)return(n/1e4).toFixed(1)+'万'; return n.toLocaleString(); };
 const DOW = ['日','月','火','水','木','金','土'];
 let RAW=null, type='all', charts={};
+const MILESTONES=[1000,5000,10000,50000,100000,500000,1000000];
+const MILE_LABEL={1000:'（収益化ライン）',100000:'（10万人）',1000000:'（100万人）'};
 
 function filtered(src){ const v=(src||RAW).videos; if(type==='long')return v.filter(x=>!x.isShort); if(type==='short')return v.filter(x=>x.isShort); return v; }
 
@@ -357,11 +353,22 @@ function render(){
   ].map(([l,v,cl],i)=>`<div class="card kpi"><div class="label">${l}</div><div class="val ${cl}" id="kpi${i}">${v===null?'非公開':'0'}</div></div>`).join('');
   [c.totalViews,c.hiddenSubs?null:c.subscribers,sumLikes,sumComments,c.totalVideos].forEach((v,i)=>{ if(v!==null)countUp(document.getElementById('kpi'+i),v); });
 
-  const goal=RAW.goal,now=c.subscribers,pct=Math.min(now/goal*100,100);
-  document.getElementById('goalRemain').innerHTML='あと <b>'+fmt(Math.max(goal-now,0))+'</b> <small>人</small>';
-  document.getElementById('goalBar').style.width=pct+'%';
-  document.getElementById('goalNow').textContent='現在 '+fmt(now)+' / 目標 '+fmt(goal);
-  document.getElementById('goalPct').textContent=pct.toFixed(1)+'%';
+  const now=c.subscribers;
+  // NEXT目標：直近のマイルストーン（まずは収益化の1000人）
+  const nextMile=MILESTONES.find(m=>m>now)||1000000;
+  const nextLabel=MILE_LABEL[nextMile]||'';
+  const nextPct=Math.min(now/nextMile*100,100);
+  document.getElementById('goalNext').innerHTML=`
+    <div style="font-size:12px;color:var(--muted);font-weight:700">🚩 NEXT目標 ${nextLabel}</div>
+    <div class="big" style="font-size:30px">あと <b>${fmt(Math.max(nextMile-now,0))}</b> <small>人で ${fmt(nextMile)}人</small></div>
+    <div class="bar"><span style="width:${nextPct}%"></span></div>
+    <div class="row"><span>現在 ${fmt(now)} / ${fmt(nextMile)}人</span><span class="pct">${nextPct.toFixed(1)}%</span></div>`;
+  // 最終目標：100万人
+  const goal=RAW.goal||1000000, gpct=Math.min(now/goal*100,100);
+  document.getElementById('goalFinal').innerHTML=`
+    <div style="font-size:12px;color:var(--muted);font-weight:700">🏆 最終目標 100万人</div>
+    <div class="bar" style="margin-top:6px"><span style="width:${gpct}%;background:linear-gradient(90deg,var(--gold),var(--pink))"></span></div>
+    <div class="row"><span>現在 ${fmt(now)} / ${fmt(goal)}人</span><span class="pct" style="color:var(--gold)">${gpct.toFixed(2)}%</span></div>`;
 
   const latest=RAW.videos[0];
   document.getElementById('latest').innerHTML=latest?`<img src="${latest.thumb}"/><div><div class="lv">${fmt(latest.views)}<small style="font-size:13px;color:var(--muted)"> 回</small></div><div class="lt">${latest.title}</div></div>`:'<div class="lt">動画がまだありません</div>';
@@ -647,54 +654,64 @@ function renderEmerging(){
     </div>`).join('')+'</div>';
 }
 // ── 成長予測（りくまこRadio固定・データ自動反映）──────────────
-let RIKUMAKO=null;
+let RIKUMAKO=null, FC=null;
 async function prefillForecast(){
-  // りくまこRadioのデータを取得して自動反映（未取得なら取りに行く）
-  if(!RIKUMAKO){
-    try{ const r=await fetch('/api/analytics?channel=&max=50'); RIKUMAKO=await r.json(); }catch{ RIKUMAKO=null; }
-  }
-  const d=RIKUMAKO;
-  const c=d&&!d.error?d.channel:{subscribers:0};
-  const vids=d&&d.videos?d.videos:[];
-  let cad=null;
-  if(vids.length>=2){ const ds=vids.map(v=>new Date(v.publishedAt).getTime()).sort((a,b)=>b-a); const span=(ds[0]-ds[ds.length-1])/86400000||30; cad=vids.length/(span/30); }
-  const avgV=vids.length?Math.round(vids.reduce((a,v)=>a+v.views,0)/vids.length):0;
-  // 動画がまだ無い場合は「これから始める」想定の初期値
-  document.getElementById('fcSubs').value=c.subscribers||0;
-  document.getElementById('fcPosts').value=cad?Math.max(1,Math.round(cad)):20;
-  document.getElementById('fcViews').value=avgV||3000;
-  document.getElementById('fcConv').value=1.0;
-  document.getElementById('fcGoal').value=(d&&d.goal)||1000000;
+  if(!RIKUMAKO){ try{ const r=await fetch('/api/analytics?channel=&max=50'); RIKUMAKO=await r.json(); }catch{ RIKUMAKO=null; } }
+  const d=RIKUMAKO, c=d&&!d.error?d.channel:{subscribers:0,totalViews:0}, vids=d&&d.videos?d.videos:[];
+  // 投稿頻度（月）
+  let posts=0;
+  if(vids.length>=2){ const ds=vids.map(v=>new Date(v.publishedAt).getTime()).sort((a,b)=>b-a); const span=(ds[0]-ds[ds.length-1])/86400000||30; posts=vids.length/(span/30); }
+  else if(vids.length===1) posts=4;
+  const avgViews=vids.length?Math.round(vids.reduce((a,v)=>a+v.views,0)/vids.length):0;
+  // 視聴→登録の転換率（実データ：総登録/総再生）。無ければ1%を仮定
+  let conv=(c.totalViews>0 && c.subscribers>0)?(c.subscribers/c.totalViews):0.01;
+  conv=Math.min(Math.max(conv,0.001),0.05);
+  // 成長履歴から実測の月間増加（あれば優先）
+  let histGain=0;
+  try{ const h=await (await fetch('/api/history')).json();
+    if(Array.isArray(h)&&h.length>=5){ const days=(new Date(h[h.length-1].date)-new Date(h[0].date))/86400000||1; histGain=(h[h.length-1].subs-h[0].subs)/days*30; }
+  }catch{}
+  FC={ subs:c.subscribers||0, posts:Math.round(posts*10)/10, avgViews, conv, histGain:Math.round(histGain), hasData:vids.length>0 };
+  document.getElementById('fcBasis').innerHTML=`
+    <div class="metric"><span class="m">現在の登録者数</span><span class="d">${fmt(FC.subs)}</span></div>
+    <div class="metric"><span class="m">月間の投稿本数（実績）</span><span class="d">${FC.hasData?FC.posts+' 本':'—'}</span></div>
+    <div class="metric"><span class="m">1本あたり平均再生数</span><span class="d">${FC.hasData?fmt(FC.avgViews):'—'}</span></div>
+    <div class="metric"><span class="m">推定 視聴→登録 転換率</span><span class="d">${(FC.conv*100).toFixed(2)}%</span></div>
+    ${FC.histGain>0?`<div class="metric"><span class="m">実測の月間増加ペース</span><span class="d" style="color:var(--green)">+${fmt(FC.histGain)}/月</span></div>`:''}`;
 }
 function runForecast(){
-  const S0=+document.getElementById('fcSubs').value||0;
-  const posts=+document.getElementById('fcPosts').value||0;
-  const views=+document.getElementById('fcViews').value||0;
-  const conv=(+document.getElementById('fcConv').value||0)/100;
-  const goal=+document.getElementById('fcGoal').value||1000000;
-  const M=24;
+  if(!FC) return;
+  const M=24, nextMile=MILESTONES.find(m=>m>FC.subs)||1000000, FINAL=1000000;
+  // データが無い場合は予測せず案内（＋参考の初期想定を薄く表示）
+  const noData=!FC.hasData && FC.subs===0;
+  const baseViews=FC.hasData?FC.avgViews:3000;
+  const basePosts=FC.hasData?FC.posts:10;
   const scen={ '保守':{m:0.015,c:0.7,col:'#7d8aa3'}, '標準':{m:0.04,c:1.0,col:'#22e0d6'}, '強気':{m:0.08,c:1.4,col:'#3ddc97'} };
-  const series={}, reach={};
+  const series={}, reachN={}, reachF={};
   for(const [k,s] of Object.entries(scen)){
-    let S=S0,V=views; const arr=[S];
-    for(let t=1;t<=M;t++){ const gain=posts*V*conv*s.c; S+=gain; V*=(1+s.m); arr.push(Math.round(S)); }
+    let S=FC.subs,V=baseViews; const arr=[S];
+    for(let t=1;t<=M;t++){ let gain=basePosts*V*FC.conv*s.c; if(FC.histGain>0&&k==='標準')gain=Math.max(gain,FC.histGain*(1+s.m*t)); S+=gain; V*=(1+s.m); arr.push(Math.round(S)); }
     series[k]=arr;
-    const hit=arr.findIndex(x=>x>=goal); reach[k]=hit<0?null:hit;
+    const hn=arr.findIndex(x=>x>=nextMile); reachN[k]=hn<0?null:hn;
+    const hf=arr.findIndex(x=>x>=FINAL); reachF[k]=hf<0?null:hf;
   }
   const labels=Array.from({length:M+1},(_,i)=>i+'ヶ月');
   mkChart('fcChart',{type:'line',data:{labels,datasets:Object.entries(scen).map(([k,s])=>({label:k,data:series[k],borderColor:s.col,backgroundColor:'transparent',tension:.3,pointRadius:0,borderWidth:k==='標準'?3:2,borderDash:k==='標準'?[]:[5,4]}))},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#eaf0fb',font:{size:11}}},tooltip:{callbacks:{label:i=>i.dataset.label+': '+fmt(i.raw)+'人'}}},scales:{x:{grid:{color:'#141c2a'},ticks:{color:'#7d8aa3',maxTicksLimit:13,font:{size:10}}},y:{grid:{color:'#141c2a'},ticks:{color:'#7d8aa3',callback:v=>fmt(v),font:{size:10}}}}}});
-  const std=series['標準'], m12=std[12], m24=std[24];
-  const rStd=reach['標準'], rStr=reach['強気'], rCon=reach['保守'];
-  const my=v=>v===null?'24ヶ月では未到達':(v<12?v+'ヶ月':(v/12).toFixed(1)+'年');
+  const std=series['標準'];
+  const my=v=>v===null?'24ヶ月では未到達':(v<12?'約'+v+'ヶ月':'約'+(v/12).toFixed(1)+'年');
+  if(noData){
+    document.getElementById('fcSummary').innerHTML=`<div class="fcsum">まだ動画がないため、実データからの予測はこれからです。<br>投稿を始めると、<b>投稿数・再生数・登録者から自動で</b>「今のペースだと◯ヶ月で収益化(1000人)」のような予測が出ます。<br><br><span style="color:var(--muted);font-size:12px">下のグラフは「月10本・平均3000再生で始めた場合」の<b>参考</b>です。</span></div>`;
+    return;
+  }
   document.getElementById('fcSummary').innerHTML=`<div class="fcsum">
-    今のペース（月${posts}本・平均${fmt(views)}再生・転換率${(conv*100).toFixed(1)}%）を続けると…<br><br>
-    📈 <b>12ヶ月後：約${fmt(m12)}人</b> ／ 24ヶ月後：約${fmt(m24)}人（標準シナリオ）<br><br>
-    🎯 目標 ${fmt(goal)}人 到達まで：<br>
-    ・<span class="strong">強気</span> 約${my(rStr)}　・標準 <b style="font-size:14px">約${my(rStd)}</b>　・<span class="cons">保守 約${my(rCon)}</span><br><br>
-    <span style="color:var(--muted);font-size:12px">※ 再生数が伸びるほど登録の伸びは加速します。投稿本数か平均再生数を上げると、曲線が大きく上振れします。数字を変えて試してみてください。</span>
+    実績（月${FC.posts}本・平均${fmt(FC.avgViews)}再生・転換率${(FC.conv*100).toFixed(2)}%）のペースが続くと…<br><br>
+    📈 <b>12ヶ月後：約${fmt(std[12])}人</b> ／ 24ヶ月後：約${fmt(std[24])}人（標準）<br><br>
+    🚩 <b>NEXT目標 ${fmt(nextMile)}人</b> 到達まで：
+    <span class="strong">強気${my(reachN['強気'])}</span> ・ 標準<b>${my(reachN['標準'])}</b> ・ <span class="cons">保守${my(reachN['保守'])}</span><br>
+    🏆 <b>100万人</b> まで：<span class="strong">強気${my(reachF['強気'])}</span> ・ 標準${my(reachF['標準'])} ・ <span class="cons">保守${my(reachF['保守'])}</span><br><br>
+    <span style="color:var(--muted);font-size:12px">※ 再生数・投稿数が上がると曲線は大きく上振れします。まずはNEXT目標を最速で。</span>
   </div>`;
 }
-document.getElementById('fcRun').onclick=runForecast;
 
 // ── 最新投稿の自動診断 ──────────────────────────────────────
 async function loadNewVideo(){
