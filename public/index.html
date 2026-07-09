@@ -492,14 +492,19 @@ async function ensureDashboard(force){
   }catch(e){ document.getElementById('bmChannels').innerHTML='<div class="err">⚠️ '+e.message+'</div>'; }
 }
 function renderDash(){
+  loadManage();
   document.getElementById('bmUpdated').textContent=fmtUpdated(DASH.updatedAt)+(DASH.building?'（更新中…）':'');
   document.getElementById('emUpdated').textContent=fmtUpdated(DASH.updatedAt);
-  renderBenchmark(DASH.benchmark.channels);
-  document.getElementById('bmAiOut').innerHTML=DASH.benchmarkAdvice?mdLite(DASH.benchmarkAdvice):'<div class="hint">分析はまだありません。「今すぐ更新」で生成できます。</div>';
-  EM={channels:DASH.emerging.channels}; renderEmerging();
-  document.getElementById('emAiOut').innerHTML=DASH.emergingAdvice?mdLite(DASH.emergingAdvice):'<div class="hint">分析はまだありません。「今すぐ更新」で生成できます。</div>';
-  loadTiming();
-  loadManage();
+  const bc=(DASH.benchmark&&DASH.benchmark.channels)||[];
+  const ec=(DASH.emerging&&DASH.emerging.channels)||[];
+  const quotaMsg='<div class="card building">📊 データを準備中です。<br>YouTube APIの1日の取得上限に達している場合、翌日に自動で復旧します。<br>（「今すぐ更新」で再取得も試せます）</div>';
+  if(bc.length<2){ document.getElementById('bmChannels').innerHTML=quotaMsg; }
+  else renderBenchmark(bc);
+  document.getElementById('bmAiOut').innerHTML=DASH.benchmarkAdvice?mdLite(DASH.benchmarkAdvice):'<div class="hint">分析は自動取得の完了後に表示されます。</div>';
+  if(ec.length<1){ document.getElementById('emChannels').innerHTML=quotaMsg; }
+  else { EM={channels:ec}; renderEmerging(); }
+  document.getElementById('emAiOut').innerHTML=DASH.emergingAdvice?mdLite(DASH.emergingAdvice):'<div class="hint">分析は自動取得の完了後に表示されます。</div>';
+  renderTiming(DASH.timing);
 }
 async function refreshDash(btn){
   const old=btn.textContent; btn.disabled=true; btn.innerHTML='<span class="spin"></span> 更新を開始…';
@@ -574,11 +579,11 @@ function renderBenchmark(channels){
 let EM=null;
 
 const DOWJP=['日','月','火','水','木','金','土'];
-async function loadTiming(){
+function renderTiming(t){
   const card=document.getElementById('timingCard'), body=document.getElementById('timingBody');
-  card.style.display=''; body.innerHTML='<span class="spin"></span> 人気動画の投稿時間を集計中…';
+  if(!t||!t.dow){ card.style.display='none'; return; }
+  card.style.display='';
   try{
-    const r=await fetch('/api/timing'); const t=await r.json(); if(t.error)throw new Error(t.error);
     const slots=t.slots&&t.slots.length?t.slots:[{dow:t.bestDow,hour:t.bestHour}];
     const nowJst=new Date(Date.now()+9*3600e3);
     // 各スロットの「次の到来日時」とカウントダウンを計算

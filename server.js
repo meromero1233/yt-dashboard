@@ -268,10 +268,9 @@ async function getAnalytics(channelInput, maxVideos = 50) {
 // 新興チャンネル発見：同ジャンルで「開設◯ヶ月以内」なのに伸びているチャンネル
 async function getEmergingChannels(months, limit = 6) {
   const since = Date.now() - months * 30 * 86400000;
+  // クォータ節約：検索は各100ユニット。3日に1回の自動取得で使う想定
   const queries = [
-    '都市伝説', '雑学 豆知識', '未解決事件', '怖い話',
-    '闇 ゆっくり解説', '都市伝説 shorts', '雑学 shorts', 'ゾッとする話', '人怖',
-    '心霊', 'オカルト', '世界の謎', 'ミステリー 解説', '怖い雑学',
+    '都市伝説 shorts', '雑学 shorts', '未解決事件', '怖い話', '闇 ゆっくり解説', 'ゾッとする話', 'オカルト',
   ];
   const chIds = new Set();
   for (const q of queries) {
@@ -475,10 +474,12 @@ async function buildDashboard() {
       setTimeout(() => buildDashboard(), 3 * 3600 * 1000);
       return;
     }
+    let timing = null;
+    try { timing = await getBestTiming(); } catch (e) { console.error('[auto] timing:', e.message); }
     let benchmarkAdvice = '', emergingAdvice = '';
     try { benchmarkAdvice = await aiBenchmark(benchmark); } catch (e) { console.error('[auto] benchmark AI:', e.message); }
     try { emergingAdvice = await aiEmerging(emerging); } catch (e) { console.error('[auto] emerging AI:', e.message); }
-    const cache = { updatedAt: new Date().toISOString(), benchmark: { days: 90, channels: benchmark }, emerging: { channels: emerging }, benchmarkAdvice, emergingAdvice };
+    const cache = { updatedAt: new Date().toISOString(), benchmark: { days: 90, channels: benchmark }, emerging: { channels: emerging }, timing, benchmarkAdvice, emergingAdvice };
     saveJSON(CACHE_FILE, cache);
     console.log(`[auto] 完了：大手${benchmark.length}件・新興${emerging.length}件`);
     return cache;
