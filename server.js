@@ -469,6 +469,12 @@ async function buildDashboard() {
   try {
     const benchmark = await fetchManagedBenchmark(90);
     const emerging = await getEmergingChannels(6, 10);
+    // クォータ切れ等で取得がほぼ空なら、既存の良いキャッシュを壊さず数時間後に再試行
+    if (benchmark.length < 2 || emerging.length < 1) {
+      console.warn(`[auto] 取得不足（大手${benchmark.length}・新興${emerging.length}）→ キャッシュ保持、3時間後に再試行`);
+      setTimeout(() => buildDashboard(), 3 * 3600 * 1000);
+      return;
+    }
     let benchmarkAdvice = '', emergingAdvice = '';
     try { benchmarkAdvice = await aiBenchmark(benchmark); } catch (e) { console.error('[auto] benchmark AI:', e.message); }
     try { emergingAdvice = await aiEmerging(emerging); } catch (e) { console.error('[auto] emerging AI:', e.message); }
@@ -478,6 +484,7 @@ async function buildDashboard() {
     return cache;
   } catch (e) {
     console.error('[auto] 失敗:', e.message);
+    setTimeout(() => buildDashboard(), 3 * 3600 * 1000);
   } finally {
     building = false;
   }
@@ -487,8 +494,9 @@ const THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
 function scheduleAutoFetch() {
   const cache = loadJSON(CACHE_FILE, null);
   const age = cache ? Date.now() - new Date(cache.updatedAt).getTime() : Infinity;
-  if (age > THREE_DAYS) {
-    console.log('[auto] キャッシュが古い/無いため取得します');
+  const incomplete = !cache || (cache.benchmark?.channels?.length || 0) < 2 || (cache.emerging?.channels?.length || 0) < 1;
+  if (age > THREE_DAYS || incomplete) {
+    console.log(`[auto] 取得します（${incomplete ? 'キャッシュ不十分' : 'キャッシュ期限切れ'}）`);
     setTimeout(() => buildDashboard(), 5000);
   } else {
     console.log(`[auto] キャッシュ有効（${Math.round(age / 3600000)}時間前）`);
