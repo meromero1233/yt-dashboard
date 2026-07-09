@@ -170,8 +170,7 @@
     <button data-tab="growth">📈 成長分析</button>
     <button data-tab="valueup">🚀 バリューアップ</button>
     <button data-tab="advice">🧠 AI高島</button>
-    <button data-tab="compare">⚔️ 競合比較</button>
-    <button data-tab="benchmark">🎯 ベンチマーク</button>
+    <button data-tab="benchmark">⚔️ ライバル分析</button>
     <button data-tab="emerging">🌱 新興ch分析</button>
     <button data-tab="forecast">🔮 成長予測</button>
   </div>
@@ -239,29 +238,26 @@
     </div>
   </div>
 
-  <!-- 競合比較 -->
-  <div class="view" id="view-compare">
-    <div class="card">
-      <div class="panel-title">⚔️ 競合・参考チャンネルと比較</div>
-      <div class="controls">
-        <input id="rivalInput" placeholder="比較するチャンネルID / @ハンドル" />
-        <button class="btn" id="compareBtn">比較する</button>
-      </div>
-      <div id="compareOut"></div>
-    </div>
-  </div>
-
-  <!-- ベンチマーク -->
+  <!-- ライバル分析（大手ベンチマーク＋競合比較を統合）-->
   <div class="view" id="view-benchmark">
     <div class="card" style="margin-bottom:14px">
-      <div class="panel-title">🎯 同ジャンル大手ベンチマーク <span id="bmUpdated" class="updated-tag"></span></div>
-      <div class="hint">大手はデフォルト表示。チャンネルを検索して追加、表示ON/OFFや削除もできます。データは3日に1回自動更新されます。</div>
+      <div class="panel-title">⚔️ ライバル分析（大手＆競合） <span id="bmUpdated" class="updated-tag"></span></div>
+      <div class="hint">大手はデフォルト表示。ライバルを検索して追加、表示ON/OFFや削除もできます。データは3日に1回自動更新。</div>
       <div class="controls">
         <input id="bmAddInput" placeholder="追加するチャンネルID / @ハンドル / 名前" />
         <button class="btn" id="bmAddBtn">＋追加</button>
         <button class="btn ghost" id="bmRefreshBtn">🔄 今すぐ更新</button>
       </div>
       <div id="bmManage" class="manage"></div>
+    </div>
+    <div class="card" style="margin-bottom:14px">
+      <div class="panel-title">🆚 りくまこ vs ライバル（直接比較）</div>
+      <div class="hint">気になるライバルを入れると、りくまこRadioと数字を並べて勝負します。</div>
+      <div class="controls">
+        <input id="rivalInput" placeholder="比較するチャンネルID / @ハンドル" />
+        <button class="btn" id="compareBtn">比較する</button>
+      </div>
+      <div id="compareOut"></div>
     </div>
     <div id="bmChannels"></div>
     <div class="card" id="bmTraitsCard" style="display:none;margin-bottom:14px">
@@ -461,12 +457,13 @@ async function doCompare(){
   const rival=document.getElementById('rivalInput').value.trim();
   const out=document.getElementById('compareOut');
   if(!rival){out.innerHTML='<div class="hint">比較先を入力してください。</div>';return;}
-  if(!RAW){out.innerHTML='<div class="hint">先に自分のチャンネルを分析してください。</div>';return;}
   out.innerHTML='<div style="padding:20px"><span class="spin"></span> 取得中…</div>';
   try{
+    // 基準は常にりくまこRadio
+    if(!RIKUMAKO){ const rr=await fetch('/api/analytics?channel=&max=50'); RIKUMAKO=await rr.json(); }
     const r=await fetch('/api/analytics?channel='+encodeURIComponent(rival)+'&max=50');
     const d=await r.json(); if(d.error)throw new Error(d.error);
-    const A=RAW,B=d;
+    const A=RIKUMAKO,B=d;
     const stat=(x)=>{ const v=x.videos; const tv=v.reduce((a,q)=>a+q.views,0); return {
       subs:x.channel.subscribers, views:x.channel.totalViews, vids:x.channel.totalVideos,
       avg:v.length?Math.round(tv/v.length):0,
