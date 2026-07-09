@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>楽天イーグルスコラボCUP｜早わかりガイド</title>
+<style>
+  :root{
+    --crimson:#bf0000; --crimson2:#8a0000; --navy:#14213d; --gold:#e6b422;
+    --bg:#f4f6fb; --card:#ffffff; --ink:#1b2230; --muted:#6b7688; --line:#e5e9f2;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Hiragino Sans','Noto Sans JP','Segoe UI',sans-serif;background:var(--bg);color:var(--ink);line-height:1.7}
+  .wrap{max-width:820px;margin:0 auto;padding:0 16px 60px}
+  /* ヘッダー */
+  header{background:linear-gradient(135deg,var(--crimson),var(--crimson2));color:#fff;padding:38px 20px 30px;text-align:center;border-radius:0 0 26px 26px;box-shadow:0 8px 24px rgba(191,0,0,.25)}
+  header .badge{display:inline-block;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.4);padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700;letter-spacing:1px;margin-bottom:12px}
+  header h1{font-size:26px;font-weight:900;line-height:1.3}
+  header .sub{margin-top:10px;font-size:14px;opacity:.95}
+  header .period{margin-top:14px;display:inline-block;background:#fff;color:var(--crimson);font-weight:800;padding:8px 18px;border-radius:12px;font-size:15px}
+  .note-top{max-width:820px;margin:14px auto 0;padding:10px 16px;font-size:12px;color:var(--muted);text-align:center}
+  /* セクション */
+  section{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:22px;margin-top:20px;box-shadow:0 2px 10px rgba(20,33,61,.04)}
+  .h{display:flex;align-items:center;gap:10px;font-size:19px;font-weight:900;margin-bottom:16px;color:var(--navy)}
+  .h .ic{width:34px;height:34px;flex:none;background:linear-gradient(135deg,var(--crimson),var(--crimson2));color:#fff;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px}
+  /* 部門カード */
+  .divs{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .div{border:1px solid var(--line);border-radius:14px;padding:14px 16px;background:#fbfcfe}
+  .div .dn{font-weight:800;font-size:15px;color:var(--crimson)}
+  .div .ds{font-size:13px;color:var(--muted);margin-top:4px}
+  .div .badge6{display:inline-block;font-size:11px;background:var(--navy);color:#fff;padding:2px 8px;border-radius:8px;margin-top:8px}
+  /* タイムライン */
+  .tl{position:relative;padding-left:26px}
+  .tl::before{content:'';position:absolute;left:8px;top:6px;bottom:6px;width:2px;background:var(--line)}
+  .tl .step{position:relative;padding:0 0 18px}
+  .tl .step:last-child{padding-bottom:0}
+  .tl .dot{position:absolute;left:-26px;top:2px;width:18px;height:18px;border-radius:50%;background:#fff;border:3px solid var(--crimson)}
+  .tl .st{font-weight:800;font-size:15px}
+  .tl .sd{font-size:13px;color:var(--muted)}
+  .tl .sr{font-size:13px;margin-top:3px}
+  .tl .now{border-color:var(--gold);box-shadow:0 0 0 4px rgba(230,180,34,.25)}
+  /* 表 */
+  table{width:100%;border-collapse:collapse;font-size:14px;margin-top:4px}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:#f7f9fd;color:var(--navy);font-weight:800;font-size:13px}
+  tr:last-child td{border-bottom:none}
+  .pill{display:inline-block;background:#fdeaea;color:var(--crimson);font-weight:700;font-size:12px;padding:2px 8px;border-radius:8px;margin:2px 4px 2px 0;white-space:nowrap}
+  .rule{background:#f7f9fd;border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:14px}
+  .rule b{color:var(--crimson)}
+  .highlight{border:2px solid var(--crimson)}
+  .win{background:linear-gradient(135deg,#fff8e6,#fffdf7);border:1px solid var(--gold)}
+  .win .dn{color:#b8860b}
+  ul.clean{list-style:none;margin-top:6px}
+  ul.clean li{position:relative;padding-left:20px;font-size:14px;margin:5px 0}
+  ul.clean li::before{content:'●';position:absolute;left:2px;font-size:9px;color:var(--crimson);top:4px}
+  .foot{text-align:center;color:var(--muted);font-size:12px;margin-top:26px}
+  .anchor{scroll-margin-top:16px}
+  @media(max-width:560px){.divs{grid-template-columns:1fr}header h1{font-size:22px}}
+</style>
+</head>
+<body>
+<header>
+  <div class="badge">⚾ PALMU × 楽天イーグルス</div>
+  <h1>Team Challenge<br>楽天イーグルスコラボCUP</h1>
+  <div class="sub">3〜5名のチームで挑む、約1ヶ月の団体戦</div>
+  <div class="period">📅 予選 7/21(火)〜 本戦 8月下旬まで</div>
+</header>
+<div class="note-top">※ 開発中の情報です（2026/7/8時点）。予告なく変更される場合があります。読みやすさ優先でまとめた非公式ガイドです。</div>
+
+<div class="wrap">
+
+  <!-- 部門 -->
+  <section class="anchor" id="divisions">
+    <div class="h"><span class="ic">🏅</span>部門分類</div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:12px"><b>6月のライブスコア</b>で、以下の4部門に自動で分けられます。</p>
+    <div class="divs">
+      <div class="div"><div class="dn">プロ野球部門</div><div class="ds">650万 〜 1,500万未満</div></div>
+      <div class="div"><div class="dn">選抜野球部門</div><div class="ds">300万 〜 650万未満</div></div>
+      <div class="div"><div class="dn">草野球部門</div><div class="ds">100万 〜 300万未満</div></div>
+      <div class="div"><div class="dn">白球部門</div><div class="ds">100万未満</div></div>
+    </div>
+  </section>
+
+  <!-- スケジュール -->
+  <section class="anchor" id="schedule">
+    <div class="h"><span class="ic">🗓️</span>スケジュール（全体の流れ）</div>
+    <div class="tl">
+      <div class="step"><div class="dot now"></div><div class="st">① 予選（ランキング戦）</div><div class="sd">7/21(火)19:00 〜 7/27(月)23:59</div><div class="sr">チーム全員で参加 → <b>上位8チーム</b>が本戦へ</div></div>
+      <div class="step"><div class="dot"></div><div class="st">② 準々決勝</div><div class="sd">8/5(水)19:00 〜 8/7(金)23:59</div><div class="sr">チームから2名選出して対戦</div></div>
+      <div class="step"><div class="dot"></div><div class="st">③ 準決勝</div><div class="sd">8/12(水)19:00 〜 8/14(金)23:59</div><div class="sr">2名選出（準々決勝と同じ人でもOK）</div></div>
+      <div class="step"><div class="dot"></div><div class="st">④ 決勝 / 3位決定戦</div><div class="sd">8/18(火)19:00 〜 8/24(月)23:59</div><div class="sr">チーム全員で対戦</div></div>
+    </div>
+  </section>
+
+  <!-- 予選（prize-prelim） -->
+  <section class="anchor highlight" id="prelim">
+    <div class="h"><span class="ic">🔥</span>予選 ＆ 突破特典</div>
+    <div class="rule">📌 <b>日程</b>：7/21(火)19:00 〜 7/27(月)23:59<br>👥 <b>参加</b>：チーム全員<br>🏆 <b>勝ち抜け条件</b>：チームの<b>合計獲得コイン数</b>ランキングで<b>上位8チーム</b>に入る</div>
+
+    <div style="font-weight:800;color:var(--navy);margin:14px 0 6px">🎁 予選を突破すると（全部門共通）</div>
+    <ul class="clean"><li><b>本選トーナメント進出権</b></li></ul>
+
+    <div style="font-weight:800;color:var(--navy);margin:16px 0 6px">🎀 部門別ミニギフト（突破チームへ）</div>
+    <table>
+      <tr><th>部門</th><th>もらえるギフト（各10coin）</th></tr>
+      <tr><td>プロ野球</td><td><span class="pill">ナイスプレー</span><span class="pill">応援メガホン</span><span class="pill">ボール</span><span class="pill">バット</span><span class="pill">グローブ</span></td></tr>
+      <tr><td>選抜野球</td><td><span class="pill">ナイスプレー</span><span class="pill">応援メガホン</span><span class="pill">ボール</span><span class="pill">バット</span></td></tr>
+      <tr><td>草野球</td><td><span class="pill">ナイスプレー</span><span class="pill">応援メガホン</span><span class="pill">ボール</span></td></tr>
+      <tr><td>白球</td><td><span class="pill">ナイスプレー</span><span class="pill">応援メガホン</span></td></tr>
+    </table>
+
+    <div style="font-weight:800;color:var(--navy);margin:18px 0 6px">🥇 予選 1〜3位チームへの追加特典</div>
+    <table>
+      <tr><th>部門</th><th>追加でもらえるもの</th></tr>
+      <tr><td>プロ野球</td><td><span class="pill">ヒットを打つたいむ 300coin</span><span class="pill">盗塁たいむ 500coin</span></td></tr>
+      <tr><td>選抜野球</td><td><span class="pill">盗塁たいむ 500coin</span><span class="pill">グローブ 10coin</span></td></tr>
+      <tr><td>草野球</td><td><span class="pill">バット 10coin</span><span class="pill">グローブ 10coin</span></td></tr>
+      <tr><td>白球</td><td><span class="pill">ボール 10coin</span></td></tr>
+    </table>
+  </section>
+
+  <!-- 本戦報酬 -->
+  <section class="anchor" id="prize-final">
+    <div class="h"><span class="ic">👑</span>本戦・優勝チームの報酬</div>
+
+    <div class="div win" style="margin-bottom:12px">
+      <div class="dn">🥇 プロ野球部門 優勝</div>
+      <ul class="clean">
+        <li>楽天モバイル最強パーク宮城ビジョンCM 2本放映</li>
+        <li>BS楽天イーグルス試合中継CM 2本</li>
+        <li>YouTube広告配信</li>
+        <li>ペア観戦チケット 15組30名</li>
+        <li>表彰楯</li>
+        <li>プロフィール背景（全員＋応援リスナー上位20名）</li>
+      </ul>
+    </div>
+
+    <div class="div win" style="margin-bottom:12px">
+      <div class="dn">🥇 選抜野球部門 優勝</div>
+      <ul class="clean">
+        <li>ビジョンCM 1本</li>
+        <li>BS中継CM 2本</li>
+        <li>YouTube広告</li>
+        <li>ペア観戦チケット 5組10名</li>
+        <li>表彰楯</li>
+        <li>プロフィール背景（全員＋応援リスナー上位15名）</li>
+      </ul>
+    </div>
+
+    <div class="div win">
+      <div class="dn">🥇 草野球部門 優勝</div>
+      <ul class="clean">
+        <li>YouTube広告</li>
+        <li>表彰楯</li>
+        <li>プロフィール背景（全員＋応援リスナー上位10名）</li>
+      </ul>
+    </div>
+
+    <div class="rule" style="margin-top:14px">🥈🥉 <b>準優勝・3位</b>：各部門の優勝特典に準じます（出演日程・枠数は異なります）</div>
+  </section>
+
+  <!-- 最強バッテリー -->
+  <section class="anchor" id="battery">
+    <div class="h"><span class="ic">⚡</span>最強バッテリー賞（全部門共通）</div>
+    <p style="font-size:14px;color:var(--muted);margin-bottom:10px">準々決勝・準決勝で<b>最高の合計獲得コイン数</b>を記録した2名（バッテリー）に贈られます。</p>
+    <ul class="clean">
+      <li>ビジョンCM 1本</li>
+      <li>YouTube広告</li>
+      <li>ペア観戦チケット 5組10名</li>
+      <li>表彰楯</li>
+    </ul>
+    <div class="rule" style="margin-top:12px">※ 同じ2名が準々決勝・準決勝の両方に出場した場合、各試合を別々にカウントします。</div>
+  </section>
+
+  <div class="foot">
+    非公式・見やすさ優先のまとめガイド ⚾<br>
+    正式・最新情報は公式ページでご確認ください → portal.palmu.jp/baseballcup
+  </div>
+</div>
+</body>
+</html>
