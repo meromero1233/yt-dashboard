@@ -28,11 +28,14 @@ const DEFAULT_BENCHMARKS = [
 ];
 
 function getConfig() {
-  const c = loadJSON(CFG_FILE, null);
-  if (c && Array.isArray(c.channels)) return c;
-  const seed = { channels: DEFAULT_BENCHMARKS.map((x) => ({ ...x })) };
-  saveJSON(CFG_FILE, seed);
-  return seed;
+  let c = loadJSON(CFG_FILE, null);
+  if (!c || !Array.isArray(c.channels)) {
+    c = { channels: DEFAULT_BENCHMARKS.map((x) => ({ ...x })) };
+  }
+  if (!Array.isArray(c.emergingPins)) c.emergingPins = [];   // {id,name} 常に表示
+  if (!Array.isArray(c.emergingHidden)) c.emergingHidden = []; // id 自動発見から除外
+  saveJSON(CFG_FILE, c);
+  return c;
 }
 function saveConfig(c) { saveJSON(CFG_FILE, c); }
 
@@ -308,43 +311,65 @@ async function getEmergingChannels(months, limit = 6) {
   list.sort((a, b) => b.velocity - a.velocity);
   list = list.slice(0, limit);
 
-  // 各チャンネルの動画を取得し、投稿頻度・ショート比率・マイルストーン推定を計算
-  const MILES = [10000, 30000, 50000, 100000];
-  for (const c of list) {
-    c.freqPerMonth = Math.round((c.totalVideos / c.ageMonths) * 10) / 10;
-    c.freqPerWeek = Math.round((c.totalVideos / c.ageMonths / 4.33) * 10) / 10;
-
-    // マイルストーン推定（現在の登録ペースが一定と仮定した概算）
-    c.milestones = MILES.filter((m) => c.subs >= m).map((m) => {
-      const months = c.velocity > 0 ? m / c.velocity : null;
-      return {
-        m, months: months ? Math.round(months * 10) / 10 : null,
-        videos: months ? Math.round(c.freqPerMonth * months) : null,
-      };
-    });
-
-    try {
-      const pl = await yt('playlistItems', { part: 'contentDetails', playlistId: c.uploads, maxResults: '30' });
-      const vids = (pl.items || []).map((i) => i.contentDetails.videoId).slice(0, 30);
-      if (vids.length) {
-        const vd = await yt('videos', { part: 'snippet,statistics,contentDetails', id: vids.join(',') });
-        const arr = (vd.items || []).map((v) => {
-          const dur = parseDuration(v.contentDetails?.duration);
-          return {
-            title: v.snippet.title, views: Number(v.statistics?.viewCount || 0),
-            publishedAt: v.snippet.publishedAt,
-            thumb: v.snippet.thumbnails?.medium?.url || '', isShort: dur > 0 && dur <= SHORT_MAX,
-            url: `https://www.youtube.com/watch?v=${v.id}`,
-          };
-        });
-        const sh = arr.filter((v) => v.isShort).length;
-        c.shortRatio = arr.length ? Math.round(sh / arr.length * 100) : 0;
-        c.top = [...arr].sort((a, b) => b.views - a.views).slice(0, 3);
-        c.recent = [...arr].sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt)).slice(0, 3);
-      } else { c.top = []; c.recent = []; c.shortRatio = 0; }
-    } catch { c.top = []; c.recent = []; c.shortRatio = 0; }
-  }
+  for (const c of list) await enrichEmerging(c);
   return list;
+}
+
+// 1チャンネルを新興カード用に詳細分析（投稿頻度・ロング/ショート別平均・上位動画・マイルストーン）
+const EM_MILES = [10000, 30000, 50000, 100000, 500000, 1000000];
+async function enrichEmerging(c) {
+  c.freqPerMonth = Math.round((c.totalVideos / c.ageMonths) * 10) / 10;
+  c.freqPerWeek = Math.round((c.totalVideos / c.ageMonths / 4.33) * 10) / 10;
+  c.milestones = EM_MILES.filter((m) => c.subs >= m).map((m) => {
+    const months = c.velocity > 0 ? m / c.velocity : null;
+    return { m, months: months ? Math.round(months * 10) / 10 : null, videos: months ? Math.round(c.freqPerMonth * months) : null };
+  });
+  try {
+    const pl = await yt('playlistItems', { part: 'contentDetails', playlistId: c.uploads, maxResults: '30' });
+    const vids = (pl.items || []).map((i) => i.contentDetails.videoId).slice(0, 30);
+    if (vids.length) {
+      const vd = await yt('videos', { part: 'snippet,statistics,contentDetails', id: vids.join(',') });
+      const arr = (vd.items || []).map((v) => {
+        const dur = parseDuration(v.contentDetails?.duration);
+        return {
+          title: v.snippet.title, views: Number(v.statistics?.viewCount || 0), publishedAt: v.snippet.publishedAt,
+          thumb: v.snippet.thumbnails?.medium?.url || '', isShort: dur > 0 && dur <= SHORT_MAX,
+          url: `https://www.youtube.com/watch?v=${v.id}`,
+        };
+      });
+      const longs = arr.filter((v) => !v.isShort), shorts = arr.filter((v) => v.isShort);
+      const avg = (a) => a.length ? Math.round(a.reduce((x, v) => x + v.views, 0) / a.length) : 0;
+      c.shortRatio = arr.length ? Math.round(shorts.length / arr.length * 100) : 0;
+      c.avgViewsLong = avg(longs); c.avgViewsShort = avg(shorts);
+      c.longCount = longs.length; c.shortCount = shorts.length;
+      c.topLong = [...longs].sort((a, b) => b.views - a.views).slice(0, 3);
+      c.topShort = [...shorts].sort((a, b) => b.views - a.views).slice(0, 3);
+      c.top = [...arr].sort((a, b) => b.views - a.views).slice(0, 3);
+      c.recent = [...arr].sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt)).slice(0, 3);
+    } else { Object.assign(c, { top: [], recent: [], topLong: [], topShort: [], shortRatio: 0, longCount: 0, shortCount: 0, avgViewsLong: 0, avgViewsShort: 0 }); }
+  } catch { Object.assign(c, { top: [], recent: [], topLong: [], topShort: [], shortRatio: 0, longCount: 0, shortCount: 0, avgViewsLong: 0, avgViewsShort: 0 }); }
+  return c;
+}
+
+// ユーザー指定のチャンネルを新興カード用に分析（ピン留め・追加チャンネル用）
+async function analyzeEmergingByQuery(query) {
+  const channelId = await resolveChannel(query);
+  const ch = await yt('channels', { part: 'snippet,statistics,contentDetails', id: channelId });
+  const c = ch.items?.[0];
+  if (!c) throw new Error('取得失敗: ' + query);
+  const created = c.snippet.publishedAt;
+  const subs = Number(c.statistics?.subscriberCount || 0);
+  const card = {
+    id: channelId, name: c.snippet.title, thumb: c.snippet.thumbnails?.default?.url || '',
+    createdAt: created, subs, totalViews: Number(c.statistics?.viewCount || 0),
+    totalVideos: Number(c.statistics?.videoCount || 0),
+    uploads: c.contentDetails?.relatedPlaylists?.uploads,
+    pinned: true,
+  };
+  card.ageMonths = Math.max(0.5, (Date.now() - new Date(created).getTime()) / (30 * 86400000));
+  card.velocity = Math.round(subs / card.ageMonths);
+  await enrichEmerging(card);
+  return card;
 }
 
 // 最適投稿タイミング：同ジャンルの人気動画の投稿曜日・時間（JST）を再生数で重み付け集計
@@ -461,6 +486,21 @@ async function fetchManagedBenchmark(days = 90) {
   return out;
 }
 
+// ピン留め（＋追加）チャンネルと自動発見を合成して新興リストを作る
+async function fetchEmergingCombined(limit = 10) {
+  const cfg = getConfig();
+  const pinned = [];
+  for (const p of cfg.emergingPins) {
+    try { pinned.push(await analyzeEmergingByQuery(p.id || p.query || p.name)); }
+    catch (e) { console.warn('[emerging pin]', p.name, e.message); }
+  }
+  const pinnedIds = new Set(pinned.map((c) => c.id));
+  const hidden = new Set(cfg.emergingHidden);
+  const auto = (await getEmergingChannels(6, limit + cfg.emergingHidden.length + pinned.length))
+    .filter((c) => !hidden.has(c.id) && !pinnedIds.has(c.id));
+  return [...pinned, ...auto].slice(0, Math.max(limit, pinned.length));
+}
+
 // ── 3日に1回の自動取得（ダッシュボード全体を作ってキャッシュ）────────────────
 let building = false;
 async function buildDashboard() {
@@ -469,7 +509,7 @@ async function buildDashboard() {
   console.log('[auto] ダッシュボード自動取得を開始…');
   try {
     const benchmark = await fetchManagedBenchmark(90);
-    const emerging = await getEmergingChannels(6, 10);
+    const emerging = await fetchEmergingCombined(10);
     // クォータ切れ等で取得がほぼ空なら、既存の良いキャッシュを壊さず数時間後に再試行
     if (benchmark.length < 2 || emerging.length < 1) {
       console.warn(`[auto] 取得不足（大手${benchmark.length}・新興${emerging.length}）→ キャッシュ保持、3時間後に再試行`);
@@ -661,6 +701,48 @@ const server = http.createServer(async (req, res) => {
       }
       return;
     }
+  }
+
+  // 新興チャンネル1件を分析（追加時の即時表示用）
+  if (url.pathname === '/api/emerging-one') {
+    try {
+      const card = await analyzeEmergingByQuery(url.searchParams.get('query'));
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify(card));
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  // 新興チャンネルのピン留め・除外・追加
+  if (url.pathname === '/api/emerging-channels' && req.method === 'POST') {
+    try {
+      const { action, query, id, name } = JSON.parse((await readBody(req)) || '{}');
+      const cfg = getConfig();
+      if (action === 'pin') {
+        const chId = await resolveChannel(query || id);
+        const info = await yt('channels', { part: 'snippet', id: chId });
+        const nm = info.items?.[0]?.snippet?.title || name || query;
+        cfg.emergingHidden = cfg.emergingHidden.filter((x) => x !== chId);
+        if (!cfg.emergingPins.some((p) => p.id === chId)) cfg.emergingPins.push({ id: chId, name: nm });
+      } else if (action === 'unpin') {
+        cfg.emergingPins = cfg.emergingPins.filter((p) => p.id !== id);
+      } else if (action === 'hide') {
+        cfg.emergingPins = cfg.emergingPins.filter((p) => p.id !== id);
+        if (!cfg.emergingHidden.includes(id)) cfg.emergingHidden.push(id);
+      } else if (action === 'unhide') {
+        cfg.emergingHidden = cfg.emergingHidden.filter((x) => x !== id);
+      }
+      saveConfig(cfg);
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: true, emergingPins: cfg.emergingPins, emergingHidden: cfg.emergingHidden }));
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
   }
 
   // ベンチマーク（管理チャンネルの直近分析・オンデマンド）

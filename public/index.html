@@ -112,6 +112,9 @@
   .chip .rm{cursor:pointer;color:var(--muted);font-weight:800;padding:0 4px}
   .chip .rm:hover{color:var(--pink)}
   .building{text-align:center;padding:30px;color:var(--muted)}
+  .emact{display:flex;gap:8px;margin:8px 0 4px}
+  .embtn{font-size:11px;border:1px solid var(--line);border-radius:8px;padding:4px 10px;cursor:pointer;color:var(--muted)}
+  .embtn:hover{border-color:var(--cyan);color:var(--text)}
   .bmgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:14px}
   .bmc{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:16px;padding:16px}
   .bmc .head{display:flex;align-items:center;gap:12px;margin-bottom:12px}
@@ -278,8 +281,12 @@
   <div class="view" id="view-emerging">
     <div class="card" style="margin-bottom:14px">
       <div class="panel-title">🌱 新興チャンネル分析（最近開設なのに伸びてる） <span id="emUpdated" class="updated-tag"></span></div>
-      <div class="hint">開設6ヶ月以内で急成長中のチャンネルを約10件、自動でピックアップ。3日に1回更新され、高島が自動でフィードバックします。</div>
-      <button class="btn ghost" id="emRefreshBtn">🔄 今すぐ更新</button>
+      <div class="hint">開設6ヶ月以内で急成長中のチャンネルを約10件、自動でピックアップ。3日に1回更新。各カードで📌ピン留め（次回更新でも残す）・除外・任意追加ができます。</div>
+      <div class="controls">
+        <input id="emAddInput" placeholder="候補として追加するチャンネルID / @ハンドル / 名前" />
+        <button class="btn" id="emAddBtn">＋追加</button>
+        <button class="btn ghost" id="emRefreshBtn">🔄 今すぐ更新</button>
+      </div>
     </div>
     <div class="card" id="timingCard" style="display:none;margin-bottom:14px">
       <div class="panel-title">🕒 最適な投稿タイミング（同ジャンル人気動画から算出）</div>
@@ -562,6 +569,32 @@ document.getElementById('bmAddInput').addEventListener('keydown',e=>{if(e.key===
 document.getElementById('bmRefreshBtn').onclick=e=>refreshDash(e.target);
 document.getElementById('emRefreshBtn').onclick=e=>refreshDash(e.target);
 
+// 新興チャンネルのピン留め・除外・追加
+async function emManage(body){
+  const r=await fetch('/api/emerging-channels',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+  const d=await r.json(); if(d.error){alert(d.error);return false;} return true;
+}
+document.getElementById('emChannels').addEventListener('click',async e=>{
+  const pin=e.target.closest('[data-empin]'), unpin=e.target.closest('[data-emunpin]'), hide=e.target.closest('[data-emhide]');
+  if(!pin&&!unpin&&!hide)return;
+  e.target.textContent='…';
+  if(pin){ const id=pin.dataset.empin; await emManage({action:'pin',query:id}); const c=EM.channels.find(x=>x.id===id); if(c)c.pinned=true; renderEmerging(); }
+  if(unpin){ const id=unpin.dataset.emunpin; await emManage({action:'unpin',id}); const c=EM.channels.find(x=>x.id===id); if(c)c.pinned=false; renderEmerging(); }
+  if(hide){ const id=hide.dataset.emhide; await emManage({action:'hide',id}); EM.channels=EM.channels.filter(x=>x.id!==id); renderEmerging(); }
+});
+document.getElementById('emAddBtn').onclick=async()=>{
+  const q=document.getElementById('emAddInput').value.trim(); if(!q)return;
+  const btn=document.getElementById('emAddBtn'); btn.disabled=true; btn.textContent='追加中…';
+  try{
+    await emManage({action:'pin',query:q});
+    const r=await fetch('/api/emerging-one?query='+encodeURIComponent(q)); const card=await r.json();
+    if(card&&!card.error){ card.pinned=true; if(!EM.channels.some(x=>x.id===card.id)) EM.channels.unshift(card); renderEmerging(); }
+    else if(card.error) alert(card.error);
+  }catch(e){ alert(e.message); }
+  document.getElementById('emAddInput').value=''; btn.disabled=false; btn.textContent='＋追加';
+};
+document.getElementById('emAddInput').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('emAddBtn').click();});
+
 // ── ベンチマーク描画 ──────────────────────────────────────────
 let BM=null;
 function renderBenchmark(channels){
@@ -638,19 +671,24 @@ function renderEmerging(){
   if(!EM.channels.length){ document.getElementById('emChannels').innerHTML='<div class="card"><div class="hint">急成長中の新興チャンネルが見つかりませんでした。「今すぐ更新」で再取得してみてください。</div></div>'; return; }
   document.getElementById('emChannels').innerHTML='<div class="bmgrid">'+EM.channels.map((c,i)=>`
     <div class="bmc">
-      <div class="head"><img src="${c.thumb}"/><div><div class="nm">${c.name}</div>
+      <div class="head"><img src="${c.thumb}"/><div><div class="nm"><a href="https://www.youtube.com/channel/${c.id}" target="_blank" style="color:inherit;text-decoration:none">${c.name}</a></div>
         <div class="st">開設 ${Math.round(c.ageMonths)}ヶ月前 ・ 動画 ${fmt(c.totalVideos)}本</div></div>
-        ${i===0?'<span class="rankbadge">最速成長</span>':''}</div>
+        ${c.pinned?'<span class="rankbadge" style="background:var(--cyan)">📌 ピン</span>':(i===0?'<span class="rankbadge">最速成長</span>':'')}</div>
+      <div class="emact">
+        ${c.pinned?`<span class="embtn" data-emunpin="${c.id}">📌 ピン解除</span>`:`<span class="embtn" data-empin="${c.id}">📌 ピン留め</span><span class="embtn" data-emhide="${c.id}">🗑 除外</span>`}
+      </div>
       <div class="stats">
         <div>登録者<b>${fmt(c.subs)}</b></div>
         <div>月の増加ペース<b style="color:var(--green)">+${fmt(c.velocity)}</b></div>
-        <div>投稿頻度<b>週${c.freqPerWeek}本</b></div>
-        <div>ショート比率<b style="color:var(--pink)">${c.shortRatio}%</b></div>
+        <div>ロング平均<b>${c.longCount?fmt(c.avgViewsLong):'—'}</b><span style="font-size:10px">${c.longCount||0}本</span></div>
+        <div>ショート平均<b style="color:var(--pink)">${c.shortCount?fmt(c.avgViewsShort):'—'}</b><span style="font-size:10px">${c.shortCount||0}本</span></div>
+        <div>ショート比率<b>${c.shortRatio}%</b></div>
       </div>
       ${(c.milestones&&c.milestones.length)?`<div class="miles">${c.milestones.map(m=>`<div class="mile"><span class="mm">${fmt(m.m)}人</span><span>推定 ${m.months}ヶ月 / 約${fmt(m.videos)}本</span></div>`).join('')}</div>`:''}
-      <div class="st" style="margin:4px 0 4px">🔥 再生上位</div>
-      <div class="vids">${(c.top||[]).map(v=>`<a href="${v.url}" target="_blank"><img src="${v.thumb}"/><div class="vv">${fmt(v.views)}回</div><div class="vt">${v.title}</div></a>`).join('')||'<div class="st">動画取得なし</div>'}</div>
+      ${(c.topLong&&c.topLong.length)?`<div class="st" style="margin:4px 0 4px">▶ ロング上位</div><div class="vids">${c.topLong.map(v=>`<a href="${v.url}" target="_blank"><img src="${v.thumb}"/><div class="vv">${fmt(v.views)}回</div><div class="vt">${v.title}</div></a>`).join('')}</div>`:''}
+      ${(c.topShort&&c.topShort.length)?`<div class="st" style="margin:8px 0 4px">📱 ショート上位</div><div class="vids">${c.topShort.map(v=>`<a href="${v.url}" target="_blank"><img src="${v.thumb}"/><div class="vv" style="color:var(--pink)">${fmt(v.views)}回</div><div class="vt">${v.title}</div></a>`).join('')}</div>`:''}
       ${(c.recent&&c.recent.length)?`<div class="st" style="margin:8px 0 4px">🆕 直近の投稿</div><div class="vids">${c.recent.map(v=>`<a href="${v.url}" target="_blank"><img src="${v.thumb}"/><div class="vv" style="color:var(--muted)">${fmt(v.views)}回</div><div class="vt">${v.title}</div></a>`).join('')}</div>`:''}
+      ${(!c.topLong||!c.topLong.length)&&(!c.topShort||!c.topShort.length)?'<div class="st">動画取得なし</div>':''}
     </div>`).join('')+'</div>';
 }
 // ── 成長予測（りくまこRadio固定・データ自動反映）──────────────
@@ -696,7 +734,7 @@ function runForecast(){
     const hf=arr.findIndex(x=>x>=FINAL); reachF[k]=hf<0?null:hf;
   }
   const labels=Array.from({length:M+1},(_,i)=>i+'ヶ月');
-  mkChart('fcChart',{type:'line',data:{labels,datasets:Object.entries(scen).map(([k,s])=>({label:k,data:series[k],borderColor:s.col,backgroundColor:'transparent',tension:.3,pointRadius:0,borderWidth:k==='標準'?3:2,borderDash:k==='標準'?[]:[5,4]}))},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#eaf0fb',font:{size:11}}},tooltip:{callbacks:{label:i=>i.dataset.label+': '+fmt(i.raw)+'人'}}},scales:{x:{grid:{color:'#141c2a'},ticks:{color:'#7d8aa3',maxTicksLimit:13,font:{size:10}}},y:{grid:{color:'#141c2a'},ticks:{color:'#7d8aa3',callback:v=>fmt(v),font:{size:10}}}}}});
+  mkChart('fcChart',{type:'line',data:{labels,datasets:Object.entries(scen).map(([k,s])=>({label:k+'シナリオ',data:series[k],borderColor:s.col,backgroundColor:'transparent',tension:.3,pointRadius:0,borderWidth:k==='標準'?3:2,borderDash:k==='標準'?[]:[6,5]}))},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#eaf0fb',font:{size:13},usePointStyle:true,pointStyle:'line',boxWidth:28,boxHeight:2,padding:20}},tooltip:{callbacks:{label:i=>i.dataset.label+': '+fmt(i.raw)+'人'}}},scales:{x:{grid:{color:'#141c2a'},ticks:{color:'#9aa7bd',maxTicksLimit:13,font:{size:11}}},y:{grid:{color:'#141c2a'},ticks:{color:'#9aa7bd',callback:v=>fmt(v),font:{size:11}}}}}});
   const std=series['標準'];
   const my=v=>v===null?'24ヶ月では未到達':(v<12?'約'+v+'ヶ月':'約'+(v/12).toFixed(1)+'年');
   if(noData){
