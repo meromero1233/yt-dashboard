@@ -515,6 +515,62 @@ function scheduleHistory() {
   setInterval(snapshotHistory, 24 * 3600 * 1000);
 }
 
+// ── 新着動画の自動診断（りくまこの投稿を検知→バリューアップ＋成功事例比較）──────
+const NEWVID_FILE = path.join(DATA_DIR, 'newvideo.json');
+async function checkNewVideo() {
+  try {
+    const ch = await yt('channels', { part: 'contentDetails', id: DEFAULT_CHANNEL });
+    const uploads = ch.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+    if (!uploads) return;
+    const pl = await yt('playlistItems', { part: 'contentDetails', playlistId: uploads, maxResults: '1' }).catch(() => null);
+    const vid = pl?.items?.[0]?.contentDetails?.videoId;
+    if (!vid) return;
+    const state = loadJSON(NEWVID_FILE, {});
+    if (state.lastVid === vid) return; // 新着なし
+
+    const vd = await yt('videos', { part: 'snippet,statistics', id: vid });
+    const v = vd.items?.[0]; if (!v) return;
+    const video = {
+      id: vid, title: v.snippet.title, thumb: v.snippet.thumbnails?.medium?.url || '',
+      views: Number(v.statistics?.viewCount || 0), url: `https://www.youtube.com/watch?v=${vid}`,
+      publishedAt: v.snippet.publishedAt,
+    };
+
+    // 似た人気動画を検索（タイトルの先頭キーワードで）
+    let similar = [];
+    try {
+      const s = await yt('search', { part: 'snippet', q: video.title.slice(0, 22), type: 'video', order: 'viewCount', maxResults: '8', regionCode: 'JP', relevanceLanguage: 'ja' });
+      const ids = (s.items || []).map((i) => i.id.videoId).filter(Boolean);
+      if (ids.length) {
+        const vs = await yt('videos', { part: 'snippet,statistics', id: ids.join(',') });
+        similar = (vs.items || []).filter((x) => x.id !== vid)
+          .map((x) => ({ title: x.snippet.title, views: Number(x.statistics?.viewCount || 0), url: `https://www.youtube.com/watch?v=${x.id}` }))
+          .sort((a, b) => b.views - a.views).slice(0, 5);
+      }
+    } catch (e) { console.error('[newvideo] similar:', e.message); }
+
+    const user = `りくまこRadio（都市伝説・雑学・未解決系）が新しく投稿した動画の自動診断です。
+
+【投稿した動画】「${video.title}」（現在 ${video.views}回）
+【同じテーマで伸びている人気動画】
+${similar.map((x) => `・「${x.title}」${x.views}回`).join('\n') || '（見つかりませんでした）'}
+
+高島として、分かりやすく：
+■ この動画のバリューアップ（タイトル改善案2つ＋サムネ改善のコンセプト1つ。なぜ伸びるかも一言）
+■ 伸びている動画と比べて足りない/取り入れるべきこと（3つ、具体的に）
+■ 次の動画への一言（短く、前を向かせる）`;
+    let diagnosis = '';
+    try { diagnosis = await askClaude(TAKASHIMA, user, 1400); } catch (e) { console.error('[newvideo] AI:', e.message); }
+
+    saveJSON(NEWVID_FILE, { lastVid: vid, at: new Date().toISOString(), video, similar, diagnosis });
+    console.log('[newvideo] 新着診断を生成:', video.title);
+  } catch (e) { console.error('[newvideo]', e.message); }
+}
+function scheduleNewVideo() {
+  setTimeout(checkNewVideo, 15000);
+  setInterval(checkNewVideo, 6 * 3600 * 1000);
+}
+
 const THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
 function scheduleAutoFetch() {
   const cache = loadJSON(CACHE_FILE, null);
@@ -632,6 +688,13 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ error: e.message }));
     }
+    return;
+  }
+
+  // 最新投稿の自動診断
+  if (url.pathname === '/api/newvideo') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify(loadJSON(NEWVID_FILE, null)));
     return;
   }
 
@@ -819,6 +882,7 @@ ${summary}
 
 server.listen(PORT, () => {
   console.log(`▶ YT Dashboard: http://localhost:${PORT}`);
-  scheduleAutoFetch(); // 3日に1回の自動取得
-  scheduleHistory();   // 毎日1回の成長スナップショット
+  scheduleAutoFetch();  // 3日に1回の自動取得
+  scheduleHistory();    // 毎日1回の成長スナップショット
+  scheduleNewVideo();   // 新着動画の自動診断（6時間ごとチェック）
 });

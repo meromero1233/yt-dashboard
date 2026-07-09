@@ -179,6 +179,10 @@
 
   <!-- 概要 -->
   <div class="view on" id="view-overview">
+    <div class="card" id="newvidCard" style="display:none;margin-bottom:14px;border:1px solid var(--pink)">
+      <div class="panel-title">🆕 最新投稿の自動診断（高島）</div>
+      <div id="newvidBody"></div>
+    </div>
     <div class="kpis" id="kpis"></div>
     <div class="grid">
       <div class="card">
@@ -692,6 +696,21 @@ function runForecast(){
 }
 document.getElementById('fcRun').onclick=runForecast;
 
+// ── 最新投稿の自動診断 ──────────────────────────────────────
+async function loadNewVideo(){
+  try{
+    const r=await fetch('/api/newvideo'); const d=await r.json();
+    if(!d||!d.video){ document.getElementById('newvidCard').style.display='none'; return; }
+    document.getElementById('newvidCard').style.display='';
+    const v=d.video;
+    document.getElementById('newvidBody').innerHTML=`
+      <div class="latest" style="margin-bottom:12px"><img src="${v.thumb}"/><div>
+        <a href="${v.url}" target="_blank" style="color:var(--cyan);font-weight:800;text-decoration:none">${v.title}</a>
+        <div class="lt">現在 ${fmt(v.views)}回 ・ ${new Date(v.publishedAt).toLocaleDateString('ja-JP')} 投稿</div></div></div>
+      ${d.diagnosis?('<div class="ai-out">'+mdLite(d.diagnosis)+'</div>'):'<div class="hint">診断を生成中です。</div>'}`;
+  }catch{ document.getElementById('newvidCard').style.display='none'; }
+}
+
 // ── 成長履歴チャート（実データ）──────────────────────────────
 async function loadHistory(){
   const body=document.getElementById('historyBody');
@@ -741,6 +760,7 @@ document.getElementById('compareBtn').onclick=doCompare;
 document.getElementById('rivalInput').addEventListener('keydown',e=>{if(e.key==='Enter')doCompare();});
 setInterval(load,10*60*1000);
 load();
+loadNewVideo();
 </script>
 </body>
 </html>
