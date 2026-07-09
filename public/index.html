@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>REALTIME ANALYTICS — りくまこRadio</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 <style>
@@ -72,6 +74,7 @@
   .perfctl{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}
   .perfctl .segs button{font-family:var(--mono);font-size:11px}
   .perfhint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:30px;color:var(--muted);font-size:13px;background:rgba(14,19,28,.6);border-radius:12px}
+  .zoomhint{font-size:11px;color:var(--muted);text-align:right;margin-top:6px;font-family:var(--mono)}
   .goal .big{font-size:38px;font-weight:800;color:var(--cyan);letter-spacing:-1px}
   .goal .big small{font-size:14px;color:var(--muted)}
   .bar{height:10px;background:var(--panel);border-radius:20px;margin:14px 0 8px;overflow:hidden;border:1px solid var(--line)}
@@ -221,8 +224,10 @@
             <button data-kind="short">ショート</button>
             <button data-kind="both">両方比較</button>
           </div>
+          <button class="btn ghost" id="perfZoomReset" style="padding:6px 12px;font-size:11px">⟲ ズーム解除</button>
         </div>
         <div class="chartbox"><canvas class="chart" id="perfChart"></canvas><div id="perfHint" class="perfhint" style="display:none"></div></div>
+        <div class="zoomhint">🖱 ホイールでズーム ・ Shift+ホイール／ドラッグで移動</div>
       </div>
       <div class="card goal">
         <div class="panel-title">🎯 目標達成度</div>
@@ -452,12 +457,14 @@ function drawPerf(){
     const labels=merged.map(v=>fmtD(v.publishedAt));
     const longData=merged.map(v=>v.isShort?null:v.views);
     const shortData=merged.map(v=>v.isShort?v.views:null);
+    const bRad=Math.max(6,Math.min(15,Math.round(240/Math.max(merged.length,1))));
     mkChart('perfChart',{type:'line',data:{labels,datasets:[
-      {label:'ロング',data:longData,borderColor:'#22e0d6',backgroundColor:'transparent',tension:.35,pointRadius:3,spanGaps:true,borderWidth:2},
-      {label:'ショート',data:shortData,borderColor:'#ff3d81',backgroundColor:'transparent',tension:.35,pointRadius:3,spanGaps:true,borderWidth:2},
+      {label:'ロング',data:longData,borderColor:'#22e0d6',backgroundColor:'transparent',tension:.35,pointRadius:merged.map(v=>!v.isShort?bRad:0),pointHoverRadius:bRad+6,pointStyle:thumbPointStyles(merged,'perfChart'),spanGaps:true,borderWidth:2},
+      {label:'ショート',data:shortData,borderColor:'#ff3d81',backgroundColor:'transparent',tension:.35,pointRadius:merged.map(v=>v.isShort?bRad:0),pointHoverRadius:bRad+6,pointStyle:thumbPointStyles(merged,'perfChart'),spanGaps:true,borderWidth:2},
     ]},options:{responsive:true,maintainAspectRatio:false,
       plugins:{legend:{labels:{color:'#eaf0fb',font:{size:12},usePointStyle:true,pointStyle:'line',boxWidth:24,padding:16}},
-        tooltip:{callbacks:{title:i=>merged[i[0].dataIndex].title,label:i=>i.dataset.label+': '+fmt(i.raw)+' 回'}}},
+        tooltip:{callbacks:{title:i=>merged[i[0].dataIndex].title,label:i=>i.dataset.label+': '+fmt(i.raw)+' 回'}},
+        zoom:ZOOM_OPTS},
       scales:{
         x:{title:{display:true,text:'投稿日',...AXIS_TITLE},grid:{color:'#141c2a'},ticks:{color:'#9aa7bd',maxTicksLimit:12,font:{size:11}}},
         y:{title:{display:true,text:'再生数（回）',...AXIS_TITLE},grid:{color:'#141c2a'},ticks:{color:'#9aa7bd',callback:v=>fmt(v),font:{size:11}}}}}});
@@ -468,12 +475,54 @@ function drawPerf(){
   const data=[...src].sort((a,b)=>new Date(a.publishedAt)-new Date(b.publishedAt));
   document.getElementById('perfCount').textContent=data.length+'本';
   const col=perfKind==='short'?'#ff3d81':'#22e0d6', grad=perfKind==='short'?gPink:gCyan;
-  mkChart('perfChart',{type:'line',data:{labels:data.map(v=>fmtD(v.publishedAt)),datasets:[{data:data.map(v=>v.views),borderColor:col,backgroundColor:grad,fill:true,tension:.35,pointRadius:3,pointBackgroundColor:col===('#22e0d6')?'#ff3d81':'#22e0d6',borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,
-    plugins:{legend:{display:false},tooltip:{callbacks:{title:i=>data[i[0].dataIndex].title,label:i=>fmt(i.raw)+' 回'}}},
+  const rad=Math.max(7,Math.min(16,Math.round(260/Math.max(data.length,1)))); // 件数が多いほど小さく（ズームで拡大して見る）
+  mkChart('perfChart',{type:'line',data:{labels:data.map(v=>fmtD(v.publishedAt)),datasets:[{data:data.map(v=>v.views),borderColor:col,backgroundColor:grad,fill:true,tension:.35,pointRadius:rad,pointHoverRadius:rad+6,pointStyle:thumbPointStyles(data,'perfChart'),borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:false},tooltip:{callbacks:{title:i=>data[i[0].dataIndex].title,label:i=>fmt(i.raw)+' 回'}},zoom:ZOOM_OPTS},
     scales:{
       x:{title:{display:true,text:'投稿日',...AXIS_TITLE},grid:{color:'#141c2a'},ticks:{color:'#9aa7bd',maxTicksLimit:12,font:{size:11}}},
       y:{title:{display:true,text:'再生数（回）',...AXIS_TITLE},grid:{color:'#141c2a'},ticks:{color:'#9aa7bd',callback:v=>fmt(v),font:{size:11}}}}}});
 }
+
+// サムネイル画像を Chart.js の pointStyle として使う。
+// Chart.jsはImage/Canvasのpointスタイルを「原寸」で描くため、あらかじめ小さいCanvasに縮小してから渡す（でないと巨大化して重なる）。
+const THUMB_W=42, THUMB_H=Math.round(THUMB_W*9/16);
+function buildThumbCanvas(url){
+  return new Promise(resolve=>{
+    const img=new Image();
+    img.onload=()=>{
+      const c=document.createElement('canvas'); c.width=THUMB_W; c.height=THUMB_H;
+      c.getContext('2d').drawImage(img,0,0,THUMB_W,THUMB_H);
+      resolve(c);
+    };
+    img.onerror=()=>resolve(null);
+    img.src=url;
+  });
+}
+const thumbStore=new Map(); // url -> canvas | Promise<canvas>
+function thumbPointStyles(list,chartId){
+  const arr=list.map(v=>{
+    const cached=v.thumb&&thumbStore.get(v.thumb);
+    return (cached instanceof HTMLCanvasElement)?cached:'circle';
+  });
+  list.forEach((v,idx)=>{
+    if(!v.thumb)return;
+    if(!thumbStore.has(v.thumb)) thumbStore.set(v.thumb, buildThumbCanvas(v.thumb).then(c=>{ thumbStore.set(v.thumb, c||'circle'); return c; }));
+    Promise.resolve(thumbStore.get(v.thumb)).then(canvas=>{
+      if(!canvas)return;
+      arr[idx]=canvas;
+      const c=charts[chartId]; if(c)c.update('none');
+    });
+  });
+  return arr;
+}
+// ズーム（ホイール）＆パン（ドラッグ／Shift+ホイール）
+const ZOOM_OPTS={ pan:{enabled:true,mode:'x'}, zoom:{wheel:{enabled:true},pinch:{enabled:true},mode:'x'} };
+if(window.Chart && window.ChartZoom) Chart.register(window.ChartZoom);
+document.getElementById('perfChart').addEventListener('wheel',e=>{
+  if(!e.shiftKey)return; e.preventDefault();
+  const c=charts.perfChart; if(c && c.pan) c.pan({x:-e.deltaY},undefined,'default');
+},{passive:false});
+document.getElementById('perfZoomReset').onclick=()=>{ const c=charts.perfChart; if(c&&c.resetZoom)c.resetZoom(); };
 
 async function drawPerfSubs(){
   document.getElementById('perfCount').textContent='登録者推移';
